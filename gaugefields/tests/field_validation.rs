@@ -16,6 +16,20 @@ fn lattice_shape_rejects_every_zero_extent() {
 }
 
 #[test]
+fn lattice_and_cold_allocation_overflow_are_typed_errors() {
+    assert!(matches!(
+        LatticeShape4::new([usize::MAX, 2, 1, 1]),
+        Err(GaugeError::VolumeOverflow)
+    ));
+    let lattice = LatticeShape4::new([usize::MAX / 8 + 1, 1, 1, 1]).unwrap();
+    assert_eq!(lattice.nv(), usize::MAX / 8 + 1);
+    assert!(matches!(
+        cold_su3(lattice),
+        Err(GaugeError::AllocationOverflow)
+    ));
+}
+
+#[test]
 fn link_validation_rejects_dtype_rank_and_shape() {
     let lattice = LatticeShape4::new([2, 2, 2, 2]).unwrap();
     let wrong_dtype =

@@ -5,6 +5,10 @@ use std::path::PathBuf;
 pub enum GaugeError {
     #[error("lattice extent on axis {axis} must be positive")]
     InvalidExtent { axis: usize },
+    #[error("lattice volume overflows usize")]
+    VolumeOverflow,
+    #[error("gauge tensor allocation size overflows the supported address range")]
+    AllocationOverflow,
     #[error("expected C64 tensor, found {found}")]
     DType { found: String },
     #[error("expected rank {expected}, found {found}")]

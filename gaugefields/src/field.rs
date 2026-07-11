@@ -4,20 +4,26 @@ use tenferro_tensor::{DType, Tensor};
 
 /// Four positive lattice extents ordered `[NX, NY, NZ, NT]`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LatticeShape4([usize; 4]);
+pub struct LatticeShape4 {
+    extents: [usize; 4],
+    nv: usize,
+}
 
 impl LatticeShape4 {
     pub fn new(extents: [usize; 4]) -> Result<Self, GaugeError> {
         if let Some(axis) = extents.iter().position(|&n| n == 0) {
             return Err(GaugeError::InvalidExtent { axis });
         }
-        Ok(Self(extents))
+        let nv = extents.iter().try_fold(1usize, |volume, &extent| {
+            volume.checked_mul(extent).ok_or(GaugeError::VolumeOverflow)
+        })?;
+        Ok(Self { extents, nv })
     }
     pub const fn extents(self) -> [usize; 4] {
-        self.0
+        self.extents
     }
     pub fn nv(self) -> usize {
-        self.0.iter().product()
+        self.nv
     }
 }
 
@@ -134,7 +140,16 @@ pub fn require_su3(links: &GaugeLinks) -> Result<(), GaugeError> {
 
 pub fn cold_su3(lattice: LatticeShape4) -> Result<GaugeLinks, GaugeError> {
     let [nx, ny, nz, nt] = lattice.extents();
-    let mut values = vec![Complex64::default(); 9 * lattice.nv()];
+    let value_count = 9usize
+        .checked_mul(lattice.nv())
+        .ok_or(GaugeError::AllocationOverflow)?;
+    let byte_count = value_count
+        .checked_mul(std::mem::size_of::<Complex64>())
+        .ok_or(GaugeError::AllocationOverflow)?;
+    if byte_count > isize::MAX as usize {
+        return Err(GaugeError::AllocationOverflow);
+    }
+    let mut values = vec![Complex64::default(); value_count];
     for block in values.chunks_exact_mut(9) {
         for i in 0..3 {
             block[i + 3 * i] = Complex64::new(1.0, 0.0);

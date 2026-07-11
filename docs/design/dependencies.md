@@ -19,6 +19,12 @@ Its compile spike implements `tenferro_runtime::extension::ExtensionOp`, calls
 non-executable: it validates the Phase 0 extension and AD registration surface,
 not a Phase 6 gauge operation.
 
+`tenferro-runtime` and `tenferro-cpu` are development dependencies used by the
+dependency smoke test, not production dependencies. Consequently a normal
+no-default-features dependency graph contains `tenferro-tensor` but excludes
+the runtime, CPU backend, and faer graph. The nondefault `autodiff` feature
+enables tenferro-ad's required `cpu-faer` backend transitively.
+
 `cargo tree --duplicates` at this lockfile reports only backend/tooling families:
 `equator` 0.2/0.4/0.6 (and matching macros), `rand` 0.8/0.9 (and matching
 `rand_core`), `syn` 1/2, and `thiserror` 1/2 (and matching proc macros). These
