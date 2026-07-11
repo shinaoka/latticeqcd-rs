@@ -21,7 +21,7 @@ function json_complex_arrays(io, links)
     print(io, "]")
 end
 
-function generate(name, lattice, condition; reproducible=false, write_shifts=false)
+function generate(name, lattice, condition; reproducible=false, write_shifts=false, write_observables=false)
     out = joinpath(@__DIR__, name)
     mkpath(out)
     args = reproducible ? (; condition, randomnumber="Reproducible") : (; condition)
@@ -37,6 +37,7 @@ function generate(name, lattice, condition; reproducible=false, write_shifts=fal
     end
     plaquette_sum = calculate_Plaquette(links, similar(links[1]), similar(links[1]))
     normalized_plaquette = plaquette_sum / (6 * links[1].NV * links[1].NC)
+    action = -(BETA / links[1].NC) * plaquette_sum
     for mu in 0:3
         NPZ.npzwrite(joinpath(out, "u$(mu).npy"), links[mu + 1].U)
     end
@@ -47,12 +48,20 @@ function generate(name, lattice, condition; reproducible=false, write_shifts=fal
             NPZ.npzwrite(joinpath(out, "u$(link_mu)_shift$(axis - 1)_$(label).npy"), copy(shifted.parent.Ushifted))
         end
     end
+    if write_observables
+        for mu in 1:4
+            staple, temp = similar(links[1]), similar(links[1])
+            Gaugefields.construct_staple!(staple, links, mu, temp)
+            NPZ.npzwrite(joinpath(out, "measurement_staple$(mu - 1).npy"), staple.U)
+        end
+    end
     open(joinpath(out, "metadata.json"), "w") do io
         print(io, "{\n  \"nc\": 3,\n")
         print(io, "  \"lattice\": [", join(lattice, ", "), "],\n")
         print(io, "  \"beta\": $BETA,\n")
         print(io, "  \"expected_observables\": {\"plaquette_sum\": ", repr(plaquette_sum),
-              ", \"normalized_plaquette\": ", repr(normalized_plaquette), "},\n")
+              ", \"normalized_plaquette\": ", repr(normalized_plaquette),
+              ", \"wilson_action\": ", repr(action), "},\n")
         print(io, "  \"gaugefields_jl_version\": \"$VERSION\",\n")
         print(io, "  \"gaugefields_jl_commit\": \"$COMMIT\",\n")
         print(io, "  \"reference_bits\": ")
@@ -62,5 +71,6 @@ function generate(name, lattice, condition; reproducible=false, write_shifts=fal
 end
 
 generate("cold_1x1x1x1", (1, 1, 1, 1), "cold")
-generate("random_2x2x2x2", (2, 2, 2, 2), "hot"; reproducible=true)
+generate("random_2x2x2x2", (2, 2, 2, 2), "hot"; reproducible=true, write_observables=true)
+generate("random_4x4x4x4", (4, 4, 4, 4), "hot"; reproducible=true, write_observables=true)
 generate("shifts_3x2x4x5", (3, 2, 4, 5), "hot"; reproducible=true, write_shifts=true)
