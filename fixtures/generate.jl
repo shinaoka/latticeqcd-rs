@@ -35,6 +35,8 @@ function generate(name, lattice, condition; reproducible=false)
             links[mu].U .= circshift(links[mu].U, shifts)
         end
     end
+    plaquette_sum = calculate_Plaquette(links, similar(links[1]), similar(links[1]))
+    normalized_plaquette = plaquette_sum / (6 * links[1].NV * links[1].NC)
     for mu in 0:3
         NPZ.npzwrite(joinpath(out, "u$(mu).npy"), links[mu + 1].U)
     end
@@ -42,7 +44,8 @@ function generate(name, lattice, condition; reproducible=false)
         print(io, "{\n  \"nc\": 3,\n")
         print(io, "  \"lattice\": [", join(lattice, ", "), "],\n")
         print(io, "  \"beta\": $BETA,\n")
-        print(io, "  \"expected_observables\": {},\n")
+        print(io, "  \"expected_observables\": {\"plaquette_sum\": ", repr(plaquette_sum),
+              ", \"normalized_plaquette\": ", repr(normalized_plaquette), "},\n")
         print(io, "  \"gaugefields_jl_version\": \"$VERSION\",\n")
         print(io, "  \"gaugefields_jl_commit\": \"$COMMIT\",\n")
         print(io, "  \"reference_bits\": ")

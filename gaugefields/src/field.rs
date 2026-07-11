@@ -26,7 +26,13 @@ pub enum Boundary {
     Periodic,
 }
 
-/// One validated direction tensor with shape `[3,3,NX,NY,NZ,NT]`.
+/// One validated direction tensor with runtime shape `[NC,NC,NX,NY,NZ,NT]`.
+///
+/// `NC` is stored at runtime rather than as a const generic because the owned
+/// tenferro [`Tensor`] is dtype- and shape-erased. This wrapper validates equal
+/// color axes without imposing an SU(3)-only storage type. Fixed-size SU(3)
+/// kernels call [`require_su3`](crate::require_su3) first and return
+/// [`GaugeError::UnsupportedNc`](crate::GaugeError::UnsupportedNc) otherwise.
 #[derive(Debug)]
 pub struct GaugeLinkTensor {
     tensor: Tensor,

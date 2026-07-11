@@ -112,6 +112,15 @@ fn checked_julia_cold_fixture_loads_with_exact_provenance() {
     let fixture = load_fixture(path).unwrap();
     assert_eq!(fixture.metadata().gaugefields_jl_version, "0.7.2");
     assert_eq!(fixture.metadata().gaugefields_jl_commit.len(), 40);
+    assert_eq!(fixture.metadata().beta, 6.0);
+    assert_eq!(
+        fixture.metadata().expected_observables["normalized_plaquette"].as_f64(),
+        Some(1.0)
+    );
+    assert_eq!(
+        fixture.metadata().expected_observables["plaquette_sum"].as_f64(),
+        Some(18.0)
+    );
     let values = fixture.links().links()[0]
         .tensor()
         .as_slice::<Complex64>()
@@ -147,6 +156,14 @@ fn checked_julia_random_fixture_preserves_every_mu_axis_and_value() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2");
     let fixture = load_fixture(path).unwrap();
     let reference = fixture.metadata().reference_bits.as_ref().unwrap();
+    let normalized = fixture.metadata().expected_observables["normalized_plaquette"]
+        .as_f64()
+        .unwrap();
+    let sum = fixture.metadata().expected_observables["plaquette_sum"]
+        .as_f64()
+        .unwrap();
+    assert!(normalized.is_finite());
+    assert!(sum.is_finite());
     assert_eq!(reference.len(), 4);
     for (mu, link) in fixture.links().links().iter().enumerate() {
         let actual = link.tensor().as_slice::<Complex64>().unwrap();
