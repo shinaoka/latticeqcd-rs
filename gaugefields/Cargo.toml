@@ -1,0 +1,21 @@
+[package]
+name = "gaugefields"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+autodiff = ["dep:tenferro-ad"]
+
+[dependencies]
+num-complex.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+npyz.workspace = true
+tenferro-tensor.workspace = true
+tenferro-runtime.workspace = true
+tenferro-cpu.workspace = true
+tenferro-ad = { workspace = true, optional = true }
