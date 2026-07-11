@@ -1,3 +1,7 @@
+import Pkg
+const REQUESTED_CHECKOUT = get(ENV, "GAUGEFIELDS_JL_DIR", nothing)
+isnothing(REQUESTED_CHECKOUT) && error("set GAUGEFIELDS_JL_DIR to a clean Gaugefields.jl checkout")
+Pkg.activate(REQUESTED_CHECKOUT)
 using Gaugefields
 using NPZ
 using LinearAlgebra
@@ -7,6 +11,8 @@ const BETA = 6.0
 const VERSION = string(Base.pkgversion(Gaugefields))
 const CHECKOUT = dirname(dirname(pathof(Gaugefields)))
 const COMMIT = readchomp(`git -C $CHECKOUT rev-parse HEAD`)
+const DIRTY = read(`git -C $CHECKOUT status --porcelain --untracked-files=no`, String)
+isempty(strip(DIRTY)) || error("refusing fixture provenance from dirty Gaugefields.jl checkout: $CHECKOUT")
 
 function json_complex_arrays(io, links)
     print(io, "[")

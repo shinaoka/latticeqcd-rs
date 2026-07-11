@@ -3,6 +3,15 @@ use gaugefields::{
 };
 use num_complex::Complex64;
 use std::{fs, path::Path};
+fn residual(a: f64, b: f64) -> f64 {
+    assert!(
+        a.is_finite() && b.is_finite(),
+        "nonfinite observable: actual={a} expected={b}"
+    );
+    let r = (a - b).abs();
+    assert!(r.is_finite());
+    r
+}
 #[test]
 fn julia_random_observables_and_staples_match() {
     for name in ["random_2x2x2x2", "random_4x4x4x4"] {
@@ -26,7 +35,8 @@ fn julia_random_observables_and_staples_match() {
             ),
         ];
         for (a, b) in checks {
-            let rel = (a - b).abs() / b.abs().max(1.0);
+            let rel = residual(a, b) / b.abs().max(1.0);
+            assert!(rel.is_finite());
             assert!(rel < 1e-12, "{name}: actual={a} expected={b} rel={rel}");
         }
         let mut max = 0.0_f64;
@@ -42,7 +52,13 @@ fn julia_random_observables_and_staples_match() {
             let actual = v.tensor().as_slice::<Complex64>().unwrap();
             assert_eq!(actual.len(), expected.len());
             for (a, b) in actual.iter().zip(expected) {
-                max = max.max((*a - b).norm());
+                assert!(
+                    a.re.is_finite() && a.im.is_finite() && b.re.is_finite() && b.im.is_finite(),
+                    "{name}: nonfinite staple mu={mu}"
+                );
+                let r = (*a - b).norm();
+                assert!(r.is_finite());
+                max = max.max(r);
             }
         }
         assert!(max < 1e-13, "{name}: max staple residual={max}");

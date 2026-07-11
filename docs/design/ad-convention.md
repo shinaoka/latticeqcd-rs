@@ -27,3 +27,10 @@ bounded sum of six fixed 3×3 `ComplexF64` products evaluated from the identical
 checked fixture; no long volume reduction is involved. Aggregate observables
 use `1e-12` relative error because their summation length grows with volume.
 Parity failures report the measured maximum or relative residual.
+
+Each force API precomputes bounded forward/backward neighbor tables and borrows
+the four compact input slices once. A shared site-local `Mat3` staple helper
+feeds exact-capacity final buffers: `dsdu` and `action_gradient` construct only
+their four final C64 tensors, while `gauge_force` writes coefficient tensors
+directly and never materializes a staple or `dsdu` field. This trades two
+`NV×4` index tables for removal of multiple full-volume complex intermediates.
