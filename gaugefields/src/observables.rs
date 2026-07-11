@@ -1,7 +1,6 @@
-use crate::{
-    cold_su3, load_link, neighbor_site, require_su3, store_link, GaugeError, GaugeLinkTensor,
-    GaugeLinks, Mat3,
-};
+use crate::{load_link, neighbor_site, require_su3, GaugeError, GaugeLinkTensor, GaugeLinks, Mat3};
+use num_complex::Complex64;
+use tenferro_tensor::Tensor;
 
 fn forward(links: &GaugeLinks) -> Result<Vec<[usize; 4]>, GaugeError> {
     let l = links.lattice();
@@ -53,7 +52,18 @@ pub fn measurement_staple(
         return Err(GaugeError::InvalidDirection { direction });
     }
     let f = forward(links)?;
-    let mut out = cold_su3(links.lattice())?;
+    let value_count = links
+        .lattice()
+        .nv()
+        .checked_mul(9)
+        .ok_or(GaugeError::AllocationOverflow)?;
+    let byte_count = value_count
+        .checked_mul(std::mem::size_of::<Complex64>())
+        .ok_or(GaugeError::AllocationOverflow)?;
+    if byte_count > isize::MAX as usize {
+        return Err(GaugeError::AllocationOverflow);
+    }
+    let mut values = Vec::with_capacity(value_count);
     for (s, n) in f.iter().enumerate() {
         let mu = direction;
         let mut v = Mat3::zero();
@@ -65,14 +75,11 @@ pub fn measurement_staple(
                 v.add_scaled_real(1.0, term);
             }
         }
-        store_link(&mut out, mu, s, v)?;
+        values.extend_from_slice(v.as_array());
     }
-    let [a, b, c, d] = out.into_links();
-    Ok(match direction {
-        0 => a,
-        1 => b,
-        2 => c,
-        3 => d,
-        _ => unreachable!(),
-    })
+    debug_assert_eq!(values.len(), value_count);
+    let [nx, ny, nz, nt] = links.lattice().extents();
+    let tensor = Tensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], values)
+        .map_err(|error| GaugeError::Tensor(error.to_string()))?;
+    GaugeLinkTensor::new(tensor, links.lattice())
 }
