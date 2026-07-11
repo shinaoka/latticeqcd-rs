@@ -1,0 +1,8 @@
+{
+  "nc": 3,
+  "lattice": [1, 1, 1, 1],
+  "beta": 6.0,
+  "expected_observables": {"plaquette": 1.0},
+  "gaugefields_jl_version": "0.7.2",
+  "gaugefields_jl_commit": "9e5719970770f4497405a856315c90bef7f74449"
+}
