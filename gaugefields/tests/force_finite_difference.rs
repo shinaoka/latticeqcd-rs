@@ -70,12 +70,15 @@ fn dense_gradient_matches_second_order_central_difference() {
         let analytic = supports(case)
             .into_iter()
             .map(|(mu, site)| {
-                load_link(&grad, mu, site)
-                    .unwrap()
-                    .adjoint()
-                    .mul(d)
-                    .trace()
-                    .re
+                Mat3::load(
+                    grad[mu].tensor().as_slice::<C>().unwrap(),
+                    site.checked_mul(9).unwrap(),
+                )
+                .unwrap()
+                .adjoint()
+                .mul(d)
+                .trace()
+                .re
             })
             .sum::<f64>();
         let mut errors = Vec::new();

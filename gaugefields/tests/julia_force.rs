@@ -26,7 +26,7 @@ fn julia_dsdu_and_ta_force_match_all_components() {
         let force = gauge_force(f.links(), f.metadata().beta).unwrap();
         let mut md = 0.0_f64;
         let mut mf = 0.0_f64;
-        for mu in 0..4 {
+        for (mu, derivative) in d.iter().enumerate() {
             let bytes = fs::read(dir.join(format!("dsdu{mu}.npy"))).unwrap();
             let npy = npyz::NpyFile::new(&bytes[..]).unwrap();
             assert_eq!(npy.order(), npyz::Order::Fortran);
@@ -34,7 +34,7 @@ fn julia_dsdu_and_ta_force_match_all_components() {
             shape.extend(f.links().lattice().extents().map(|x| x as u64));
             assert_eq!(npy.shape(), shape);
             let e = npy.into_vec::<Complex64>().unwrap();
-            let actual = d.links()[mu].tensor().as_slice::<Complex64>().unwrap();
+            let actual = derivative.tensor().as_slice::<Complex64>().unwrap();
             assert_eq!(actual.len(), e.len());
             for (a, b) in actual.iter().zip(&e) {
                 assert!(

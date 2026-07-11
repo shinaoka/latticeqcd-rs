@@ -79,39 +79,51 @@ fn context(u: &GaugeLinks) -> Result<(Vec<&[C]>, NeighborTable, NeighborTable), 
     let (p, m) = neighbors(u)?;
     Ok((src, p, m))
 }
-fn complex_outputs(u: &GaugeLinks, beta: f64, gradient: bool) -> Result<GaugeLinks, GaugeError> {
-    let (src, p, m) = context(u)?;
+fn complex_output(
+    u: &GaugeLinks,
+    src: &[&[C]],
+    p: &NeighborTable,
+    m: &NeighborTable,
+    beta: f64,
+    gradient: bool,
+    mu: usize,
+) -> Result<GaugeLinkTensor, GaugeError> {
     let count = checked_count(9, u.lattice().nv(), std::mem::size_of::<C>())?;
     let [nx, ny, nz, nt] = u.lattice().extents();
-    let mut links = Vec::with_capacity(4);
-    for mu in 0..4 {
-        let mut data = Vec::with_capacity(count);
-        for s in 0..u.lattice().nv() {
-            let v = site_staple(&src, &p, &m, s, mu)?;
-            let out = if gradient {
-                v.scaled(C::new(-beta / u.nc() as f64, 0.0))
-            } else {
-                v.adjoint().scaled(C::new(0.5 * beta, 0.0))
-            };
-            data.extend_from_slice(out.as_array());
-        }
-        debug_assert_eq!(data.len(), count);
-        let tensor = Tensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], data)
-            .map_err(|e| GaugeError::Tensor(e.to_string()))?;
-        links.push(GaugeLinkTensor::new(tensor, u.lattice())?);
+    let mut data = Vec::with_capacity(count);
+    for s in 0..u.lattice().nv() {
+        let v = site_staple(src, p, m, s, mu)?;
+        let out = if gradient {
+            v.scaled(C::new(-beta / u.nc() as f64, 0.0))
+        } else {
+            v.adjoint().scaled(C::new(0.5 * beta, 0.0))
+        };
+        data.extend_from_slice(out.as_array());
     }
-    GaugeLinks::new(
-        links
-            .try_into()
-            .map_err(|_| GaugeError::Tensor("four links".into()))?,
-    )
+    debug_assert_eq!(data.len(), count);
+    let tensor = Tensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], data)
+        .map_err(|e| GaugeError::Tensor(e.to_string()))?;
+    GaugeLinkTensor::new(tensor, u.lattice())
+}
+fn complex_outputs(
+    u: &GaugeLinks,
+    beta: f64,
+    gradient: bool,
+) -> Result<[GaugeLinkTensor; 4], GaugeError> {
+    let (src, p, m) = context(u)?;
+    Ok([
+        complex_output(u, &src, &p, &m, beta, gradient, 0)?,
+        complex_output(u, &src, &p, &m, beta, gradient, 1)?,
+        complex_output(u, &src, &p, &m, beta, gradient, 2)?,
+        complex_output(u, &src, &p, &m, beta, gradient, 3)?,
+    ])
 }
 /// Julia-compatible plaquette payload `dsdu=(beta/2)V†` (no `1/NC`).
-pub fn dsdu(u: &GaugeLinks, beta: f64) -> Result<GaugeLinks, GaugeError> {
+pub fn dsdu(u: &GaugeLinks, beta: f64) -> Result<[GaugeLinkTensor; 4], GaugeError> {
     complex_outputs(u, beta, false)
 }
 /// Dense complex gradient under `dS=Re tr(G† dU)`.
-pub fn action_gradient(u: &GaugeLinks, beta: f64) -> Result<GaugeLinks, GaugeError> {
+pub fn action_gradient(u: &GaugeLinks, beta: f64) -> Result<[GaugeLinkTensor; 4], GaugeError> {
     complex_outputs(u, beta, true)
 }
 /// Four `[8,NX,NY,NZ,NT]` F64 coefficient tensors.

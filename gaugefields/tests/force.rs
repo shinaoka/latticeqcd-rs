@@ -1,12 +1,21 @@
-use gaugefields::{action_gradient, cold_su3, dsdu, gauge_force, LatticeShape4};
+use gaugefields::{
+    action_gradient, cold_su3, dsdu, gauge_force, GaugeError, GaugeLinkTensor, GaugeLinks,
+    LatticeShape4,
+};
 use num_complex::Complex64;
 use std::path::Path;
+
+#[test]
+fn complex_derivative_functions_have_fixed_direction_array_boundary() {
+    let _: fn(&GaugeLinks, f64) -> Result<[GaugeLinkTensor; 4], GaugeError> = dsdu;
+    let _: fn(&GaugeLinks, f64) -> Result<[GaugeLinkTensor; 4], GaugeError> = action_gradient;
+}
 #[test]
 fn cold_force_quantities_have_expected_shapes_and_values() {
     let l = LatticeShape4::new([2, 2, 2, 2]).unwrap();
     let u = cold_su3(l).unwrap();
     let d = dsdu(&u, 6.0).unwrap();
-    for link in d.links() {
+    for link in &d {
         for block in link
             .tensor()
             .as_slice::<Complex64>()
@@ -30,7 +39,7 @@ fn cold_force_quantities_have_expected_shapes_and_values() {
         assert!(t.as_slice::<f64>().unwrap().iter().all(|x| x.abs() < 1e-12));
     }
     let g = action_gradient(&u, 6.0).unwrap();
-    assert_eq!(g.links()[0].tensor().shape(), &[3, 3, 2, 2, 2, 2]);
+    assert_eq!(g[0].tensor().shape(), &[3, 3, 2, 2, 2, 2]);
 }
 
 #[test]
@@ -41,9 +50,10 @@ fn nonzero_force_coefficients_match_independent_local_ta_formula() {
     .unwrap();
     let d = dsdu(f.links(), f.metadata().beta).unwrap();
     let force = gauge_force(f.links(), f.metadata().beta).unwrap();
+    let dsdu0 = gaugefields::Mat3::load(d[0].tensor().as_slice::<Complex64>().unwrap(), 0).unwrap();
     let a = gaugefields::load_link(f.links(), 0, 0)
         .unwrap()
-        .mul(gaugefields::load_link(&d, 0, 0).unwrap())
+        .mul(dsdu0)
         .ta();
     let expected = [
         a[(0, 1)].im + a[(1, 0)].im,
