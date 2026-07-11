@@ -70,6 +70,7 @@ fn independent_matrix_helpers() {
     close(a.mul(b), naive(a, b, false, false));
     close(a.mul_adj_left(b), naive(a, b, true, false));
     close(a.mul_adj_right(b), naive(a, b, false, true));
+    close(a.mul(b).adjoint(), b.adjoint().mul(a.adjoint()));
     let mut r = C::default();
     for i in 0..3 {
         for k in 0..3 {
@@ -77,7 +78,14 @@ fn independent_matrix_helpers() {
         }
     }
     assert!((a.real_trace_mul(b) - r.re).abs() < 1e-12);
-    close(a.ta(), ta(a));
+    let projected = a.ta();
+    close(projected, ta(a));
+    assert!(projected.trace().norm() < 1e-12);
+    for j in 0..3 {
+        for i in 0..3 {
+            assert!((projected[(i, j)] + projected[(j, i)].conj()).norm() < 1e-12);
+        }
+    }
 }
 #[test]
 fn storage_and_scaled_add() {
@@ -86,8 +94,29 @@ fn storage_and_scaled_add() {
     a.store(&mut buf, 5).unwrap();
     assert_eq!(&buf[5..14], &a.0);
     assert_eq!(Mat3::load(&buf, 5).unwrap(), a);
+    let raw = std::array::from_fn(|i| C::new(i as f64, 10.0 - i as f64));
+    let wrapped = Mat3::from_array(raw);
+    assert_eq!(wrapped.as_array(), &raw);
     assert_eq!(Mat3::zero().0, [C::default(); 9]);
-    assert_eq!(Mat3::identity().trace(), C::new(3.0, 0.0));
+    assert_eq!(
+        Mat3::identity().0,
+        [
+            C::new(1.0, 0.0),
+            C::default(),
+            C::default(),
+            C::default(),
+            C::new(1.0, 0.0),
+            C::default(),
+            C::default(),
+            C::default(),
+            C::new(1.0, 0.0),
+        ]
+    );
+    let scale = C::new(-0.25, 0.5);
+    let scaled = a.scaled(scale);
+    for i in 0..9 {
+        assert_eq!(scaled.0[i], scale * a.0[i]);
+    }
     let mut x = sample(-2.0);
     let s = x;
     x.add_scaled_real(1.25, a);
