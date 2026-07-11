@@ -1,0 +1,39 @@
+use std::path::PathBuf;
+
+/// Validation and fixture-loading failures.
+#[derive(Debug, thiserror::Error)]
+pub enum GaugeError {
+    #[error("lattice extent on axis {axis} must be positive")]
+    InvalidExtent { axis: usize },
+    #[error("expected C64 tensor, found {found}")]
+    DType { found: String },
+    #[error("expected rank {expected}, found {found}")]
+    Rank { expected: usize, found: usize },
+    #[error("expected shape {expected:?}, found {found:?}")]
+    Shape {
+        expected: Vec<usize>,
+        found: Vec<usize>,
+    },
+    #[error("link direction {mu} has a different lattice shape")]
+    InconsistentMu { mu: usize },
+    #[error("fixture direction {mu} is not Fortran ordered")]
+    NpyOrder { mu: usize },
+    #[error("fixture direction {mu} has unsupported dtype: {detail}")]
+    NpyDType { mu: usize, detail: String },
+    #[error("fixture direction {mu} expected rank 6, found {found}")]
+    NpyRank { mu: usize, found: usize },
+    #[error("fixture metadata disagrees with data: {detail}")]
+    MetadataMismatch { detail: String },
+    #[error("invalid fixture metadata: {0}")]
+    Metadata(#[source] serde_json::Error),
+    #[error("could not read fixture file {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("invalid NPY in direction {mu}: {detail}")]
+    Npy { mu: usize, detail: String },
+    #[error("tenferro tensor construction failed: {0}")]
+    Tensor(String),
+}

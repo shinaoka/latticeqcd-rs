@@ -13,6 +13,8 @@ pins from tenferro's manifest; gaugefields does not override them.
 The default feature set is deliberately minimal. The `autodiff` feature only
 links the pinned `tenferro-ad` API; it does not promise traced gauge kernels.
 
-`cargo tree --duplicates` is retained as an audit command. Duplicate versions
-in tenferro's backend dependency graph are acceptable when selected by Cargo;
-multiple revisions of any tenferro crate are not.
+`cargo tree --duplicates` at this lockfile reports only backend/tooling families:
+`equator` 0.2/0.4/0.6 (and matching macros), `rand` 0.8/0.9 (and matching
+`rand_core`), `syn` 1/2, and `thiserror` 1/2 (and matching proc macros). These
+come through faer, npyz, and strided dependencies. There is exactly one source
+revision for every tenferro crate.
