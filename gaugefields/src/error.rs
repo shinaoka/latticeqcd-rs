@@ -9,6 +9,8 @@ pub enum GaugeError {
     VolumeOverflow,
     #[error("gauge tensor allocation size overflows the supported address range")]
     AllocationOverflow,
+    #[error("matrix block at offset {offset} exceeds buffer length {len}")]
+    MatrixBlockOutOfBounds { offset: usize, len: usize },
     #[error("expected C64 tensor, found {found}")]
     DType { found: String },
     #[error("expected rank {expected}, found {found}")]
