@@ -15,6 +15,8 @@ pub struct FixtureMetadata {
     pub expected_observables: Value,
     pub gaugefields_jl_version: String,
     pub gaugefields_jl_commit: String,
+    #[serde(default)]
+    pub reference_bits: Option<Vec<Vec<[u64; 2]>>>,
 }
 
 #[derive(Debug)]
@@ -40,14 +42,14 @@ pub fn load_fixture(directory: impl AsRef<Path>) -> Result<Fixture, GaugeError> 
             source,
         })?)
         .map_err(GaugeError::Metadata)?;
-    if metadata.nc != 3 {
+    if metadata.nc == 0 {
         return Err(GaugeError::MetadataMismatch {
-            detail: format!("NC must be 3, found {}", metadata.nc),
+            detail: "NC must be positive".into(),
         });
     }
     let lattice = LatticeShape4::new(metadata.lattice)?;
-    let expected: Vec<u64> = std::iter::once(3)
-        .chain(std::iter::once(3))
+    let expected: Vec<u64> = std::iter::once(metadata.nc as u64)
+        .chain(std::iter::once(metadata.nc as u64))
         .chain(metadata.lattice.map(|n| n as u64))
         .collect();
     let mut links = Vec::with_capacity(4);

@@ -23,3 +23,14 @@ all four array shapes must agree.
 
 `fixtures/generate.jl` is the authority for checked Julia fixtures. Data not
 produced by that script against Gaugefields.jl must not claim Julia provenance.
+The checked `random_2x2x2x2` fixture stores exact IEEE-754 reference bits for
+every component. Gaugefields.jl's reproducible initializer resets the same RNG
+for each direction, so the generator applies a direction-specific periodic
+site shift; this preserves the random SU(3) matrices while making direction and
+axis swaps observable.
+
+The Julia source roots for this contract are
+`src/4D/nowing/gaugefields_4D_nowing.jl:18` (the rank-six storage type),
+`:41` (allocation shape), and `:73-79` (component indexing). Construction
+enters through `src/AbstractGaugefields.jl:358`; deterministic hot fields use
+the `StableRNG(123)` branch at `src/4D/nowing/gaugefields_4D_nowing.jl:253-254`.

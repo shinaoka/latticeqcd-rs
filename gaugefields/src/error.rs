@@ -16,6 +16,8 @@ pub enum GaugeError {
     },
     #[error("link direction {mu} has a different lattice shape")]
     InconsistentMu { mu: usize },
+    #[error("SU(3) kernel requires NC=3, found {found}")]
+    UnsupportedNc { found: usize },
     #[error("fixture direction {mu} is not Fortran ordered")]
     NpyOrder { mu: usize },
     #[error("fixture direction {mu} has unsupported dtype: {detail}")]

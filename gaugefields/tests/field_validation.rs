@@ -1,4 +1,6 @@
-use gaugefields::{cold_su3, Boundary, GaugeError, GaugeLinkTensor, GaugeLinks, LatticeShape4};
+use gaugefields::{
+    cold_su3, require_su3, Boundary, GaugeError, GaugeLinkTensor, GaugeLinks, LatticeShape4,
+};
 use num_complex::Complex64;
 use tenferro_tensor::Tensor;
 
@@ -69,4 +71,30 @@ fn cold_su3_is_identity_at_every_site_and_periodic() {
             }
         }
     }
+}
+
+#[test]
+fn runtime_nc_is_validated_across_mu_and_only_su3_boundary_rejects_nc2() {
+    let lattice = LatticeShape4::new([1, 1, 1, 1]).unwrap();
+    let make = |nc| {
+        GaugeLinkTensor::new(
+            Tensor::from_vec_col_major(
+                vec![nc, nc, 1, 1, 1, 1],
+                vec![Complex64::default(); nc * nc],
+            )
+            .unwrap(),
+            lattice,
+        )
+        .unwrap()
+    };
+    let links = GaugeLinks::new([make(2), make(2), make(2), make(2)]).unwrap();
+    assert_eq!(links.nc(), 2);
+    assert!(matches!(
+        require_su3(&links),
+        Err(GaugeError::UnsupportedNc { found: 2 })
+    ));
+    assert!(matches!(
+        GaugeLinks::new([make(2), make(2), make(2), make(3)]),
+        Err(GaugeError::InconsistentMu { mu: 3 })
+    ));
 }

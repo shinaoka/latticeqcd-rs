@@ -31,6 +31,7 @@ pub enum Boundary {
 pub struct GaugeLinkTensor {
     tensor: Tensor,
     lattice: LatticeShape4,
+    nc: usize,
 }
 
 impl GaugeLinkTensor {
@@ -46,21 +47,35 @@ impl GaugeLinkTensor {
                 found: tensor.shape().len(),
             });
         }
+        let nc = tensor.shape()[0];
+        if nc == 0 || tensor.shape()[1] != nc {
+            return Err(GaugeError::Shape {
+                expected: vec![nc, nc],
+                found: tensor.shape()[..2].to_vec(),
+            });
+        }
         let [nx, ny, nz, nt] = lattice.extents();
-        let expected = vec![3, 3, nx, ny, nz, nt];
+        let expected = vec![nc, nc, nx, ny, nz, nt];
         if tensor.shape() != expected {
             return Err(GaugeError::Shape {
                 expected,
                 found: tensor.shape().to_vec(),
             });
         }
-        Ok(Self { tensor, lattice })
+        Ok(Self {
+            tensor,
+            lattice,
+            nc,
+        })
     }
     pub fn tensor(&self) -> &Tensor {
         &self.tensor
     }
     pub const fn lattice(&self) -> LatticeShape4 {
         self.lattice
+    }
+    pub const fn nc(&self) -> usize {
+        self.nc
     }
 }
 
@@ -73,7 +88,11 @@ pub struct GaugeLinks {
 impl GaugeLinks {
     pub fn new(links: [GaugeLinkTensor; 4]) -> Result<Self, GaugeError> {
         let lattice = links[0].lattice;
-        if let Some(mu) = links.iter().position(|link| link.lattice != lattice) {
+        let nc = links[0].nc;
+        if let Some(mu) = links
+            .iter()
+            .position(|link| link.lattice != lattice || link.nc != nc)
+        {
             return Err(GaugeError::InconsistentMu { mu });
         }
         Ok(Self {
@@ -92,6 +111,18 @@ impl GaugeLinks {
     }
     pub const fn lattice(&self) -> LatticeShape4 {
         self.links[0].lattice
+    }
+    pub const fn nc(&self) -> usize {
+        self.links[0].nc
+    }
+}
+
+/// Validates the boundary before entering any fixed-size SU(3) kernel.
+pub fn require_su3(links: &GaugeLinks) -> Result<(), GaugeError> {
+    if links.nc() == 3 {
+        Ok(())
+    } else {
+        Err(GaugeError::UnsupportedNc { found: links.nc() })
     }
 }
 

@@ -15,5 +15,16 @@ fn pinned_tenferro_constructs_column_major_c64_tensor() {
 #[cfg(feature = "autodiff")]
 #[test]
 fn autodiff_dependency_is_linked() {
-    let _ = std::any::TypeId::of::<tenferro_ad::EagerTensor>();
+    let op = gaugefields::autodiff::GaugeIdentityOp::new();
+    let input = tenferro_runtime::TracedTensor::from_vec_col_major(vec![1], vec![1.0_f64]).unwrap();
+    let outputs = tenferro_runtime::extension::apply(std::sync::Arc::new(op), &[&input]).unwrap();
+    assert_eq!(outputs.len(), 1);
+    let rules = gaugefields::autodiff::extension_rules().unwrap();
+    let ad = tenferro_ad::AdContext::builder()
+        .with_extension_rules(rules)
+        .build()
+        .unwrap();
+    assert!(ad
+        .extension_rules()
+        .is_linearize_registered("gaugefields.identity.v1"));
 }

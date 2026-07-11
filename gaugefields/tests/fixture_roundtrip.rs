@@ -120,3 +120,54 @@ fn checked_julia_cold_fixture_loads_with_exact_provenance() {
     assert_eq!(values[4], Complex64::new(1.0, 0.0));
     assert_eq!(values[8], Complex64::new(1.0, 0.0));
 }
+
+#[test]
+fn nc2_fixture_loads_but_su3_boundary_rejects_it() {
+    let dir = fixture_dir("nc2");
+    let values = vec![Complex64::new(1.0, 0.0); 4];
+    for mu in 0..4 {
+        write_npy(
+            &dir.join(format!("u{mu}.npy")),
+            &[2, 2, 1, 1, 1, 1],
+            Order::Fortran,
+            &values,
+        );
+    }
+    fs::write(dir.join("metadata.json"), r#"{"nc":2,"lattice":[1,1,1,1],"beta":6.0,"expected_observables":{},"gaugefields_jl_version":"test","gaugefields_jl_commit":"0000000000000000000000000000000000000000"}"#).unwrap();
+    let fixture = load_fixture(dir).unwrap();
+    assert_eq!(fixture.links().nc(), 2);
+    assert!(matches!(
+        gaugefields::require_su3(fixture.links()),
+        Err(GaugeError::UnsupportedNc { found: 2 })
+    ));
+}
+
+#[test]
+fn checked_julia_random_fixture_preserves_every_mu_axis_and_value() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2");
+    let fixture = load_fixture(path).unwrap();
+    let reference = fixture.metadata().reference_bits.as_ref().unwrap();
+    assert_eq!(reference.len(), 4);
+    for (mu, link) in fixture.links().links().iter().enumerate() {
+        let actual = link.tensor().as_slice::<Complex64>().unwrap();
+        assert_eq!(actual.len(), 3 * 3 * 2 * 2 * 2 * 2);
+        for (index, (&value, pair)) in actual.iter().zip(&reference[mu]).enumerate() {
+            assert_eq!(
+                [value.re.to_bits(), value.im.to_bits()],
+                *pair,
+                "mu={mu}, flat index={index}"
+            );
+        }
+    }
+    let last_site_first_component = 9 * 15;
+    assert_ne!(
+        fixture.links().links()[0]
+            .tensor()
+            .as_slice::<Complex64>()
+            .unwrap()[last_site_first_component],
+        fixture.links().links()[3]
+            .tensor()
+            .as_slice::<Complex64>()
+            .unwrap()[last_site_first_component]
+    );
+}
