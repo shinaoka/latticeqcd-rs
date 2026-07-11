@@ -35,6 +35,11 @@ allocate tensor-roll buffers and do not expose Gaugefields.jl's mutable shared
 that Julia reference only as an oracle (`gaugefields_4D_nowing.jl:380-454`);
 Rust parity is evaluated through `neighbor_site` reads.
 
+Regenerate all checked fixtures from a clean shell with:
+`julia --project=/home/shinaoka/tensor4all/Gaugefields.jl fixtures/generate.jl`.
+The explicit project supplies Gaugefields.jl and NPZ; the script records the
+loaded package version and checkout commit in every metadata file.
+
 The Julia source roots for this contract are
 `src/4D/nowing/gaugefields_4D_nowing.jl:18` (the rank-six storage type),
 `:41` (allocation shape), and `:73-79` (component indexing). Construction

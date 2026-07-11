@@ -14,25 +14,27 @@ fn julia_dsdu_and_ta_force_match_all_components() {
         let mut mf = 0.0_f64;
         for mu in 0..4 {
             let bytes = fs::read(dir.join(format!("dsdu{mu}.npy"))).unwrap();
-            let e = npyz::NpyFile::new(&bytes[..])
-                .unwrap()
-                .into_vec::<Complex64>()
-                .unwrap();
-            for (a, b) in d.links()[mu]
-                .tensor()
-                .as_slice::<Complex64>()
-                .unwrap()
-                .iter()
-                .zip(&e)
-            {
+            let npy = npyz::NpyFile::new(&bytes[..]).unwrap();
+            assert_eq!(npy.order(), npyz::Order::Fortran);
+            let mut shape = vec![3, 3];
+            shape.extend(f.links().lattice().extents().map(|x| x as u64));
+            assert_eq!(npy.shape(), shape);
+            let e = npy.into_vec::<Complex64>().unwrap();
+            let actual = d.links()[mu].tensor().as_slice::<Complex64>().unwrap();
+            assert_eq!(actual.len(), e.len());
+            for (a, b) in actual.iter().zip(&e) {
                 md = md.max((*a - *b).norm());
             }
             let bytes = fs::read(dir.join(format!("force_coeff{mu}.npy"))).unwrap();
-            let e = npyz::NpyFile::new(&bytes[..])
-                .unwrap()
-                .into_vec::<f64>()
-                .unwrap();
-            for (a, b) in force.tensors()[mu].as_slice::<f64>().unwrap().iter().zip(e) {
+            let npy = npyz::NpyFile::new(&bytes[..]).unwrap();
+            assert_eq!(npy.order(), npyz::Order::Fortran);
+            let mut shape = vec![8];
+            shape.extend(f.links().lattice().extents().map(|x| x as u64));
+            assert_eq!(npy.shape(), shape);
+            let e = npy.into_vec::<f64>().unwrap();
+            let actual = force.tensors()[mu].as_slice::<f64>().unwrap();
+            assert_eq!(actual.len(), e.len());
+            for (a, b) in actual.iter().zip(e) {
                 mf = mf.max((*a - b).abs());
             }
         }

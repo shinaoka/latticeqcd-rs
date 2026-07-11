@@ -1,5 +1,6 @@
 use crate::{
-    cold_su3, load_link, neighbor_site, require_su3, store_link, GaugeError, GaugeLinks, Mat3,
+    cold_su3, load_link, neighbor_site, require_su3, store_link, GaugeError, GaugeLinkTensor,
+    GaugeLinks, Mat3,
 };
 
 fn forward(links: &GaugeLinks) -> Result<Vec<[usize; 4]>, GaugeError> {
@@ -43,23 +44,35 @@ pub fn wilson_action(links: &GaugeLinks, beta: f64) -> Result<f64, GaugeError> {
     Ok(-beta / (links.nc() as f64) * plaquette_sum(links)?)
 }
 /// Forward/upper measurement staple, distinct from the force staple.
-pub fn measurement_staple(links: &GaugeLinks) -> Result<GaugeLinks, GaugeError> {
+pub fn measurement_staple(
+    links: &GaugeLinks,
+    direction: usize,
+) -> Result<GaugeLinkTensor, GaugeError> {
     require_su3(links)?;
+    if direction >= 4 {
+        return Err(GaugeError::InvalidDirection { direction });
+    }
     let f = forward(links)?;
     let mut out = cold_su3(links.lattice())?;
     for (s, n) in f.iter().enumerate() {
-        for mu in 0..4 {
-            let mut v = Mat3::zero();
-            for nu in 0..4 {
-                if nu != mu {
-                    let term = load_link(links, nu, s)?
-                        .mul(load_link(links, mu, n[nu])?)
-                        .mul_adj_right(load_link(links, nu, n[mu])?);
-                    v.add_scaled_real(1.0, term);
-                }
+        let mu = direction;
+        let mut v = Mat3::zero();
+        for nu in 0..4 {
+            if nu != mu {
+                let term = load_link(links, nu, s)?
+                    .mul(load_link(links, mu, n[nu])?)
+                    .mul_adj_right(load_link(links, nu, n[mu])?);
+                v.add_scaled_real(1.0, term);
             }
-            store_link(&mut out, mu, s, v)?;
         }
+        store_link(&mut out, mu, s, v)?;
     }
-    Ok(out)
+    let [a, b, c, d] = out.into_links();
+    Ok(match direction {
+        0 => a,
+        1 => b,
+        2 => c,
+        3 => d,
+        _ => unreachable!(),
+    })
 }

@@ -87,8 +87,16 @@ fn dense_gradient_matches_second_order_central_difference() {
         }
         assert!(
             errors[1] < errors[0] && errors[2] < errors[1],
-            "analytic={analytic} errors={errors:?}"
+            "case={case} analytic={analytic} errors={errors:?}"
         );
-        assert!(errors[2] < 1e-2, "errors={errors:?}");
+        let ratios = [errors[0] / errors[1], errors[1] / errors[2]];
+        assert!(
+            ratios.iter().all(|&r| (3.5..=4.5).contains(&r)),
+            "case={case} analytic={analytic} errors={errors:?} ratios={ratios:?}"
+        );
+        assert!(
+            errors[2] < 1e-2,
+            "case={case} errors={errors:?} ratios={ratios:?}"
+        );
     }
 }

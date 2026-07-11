@@ -29,21 +29,19 @@ fn julia_random_observables_and_staples_match() {
             let rel = (a - b).abs() / b.abs().max(1.0);
             assert!(rel < 1e-12, "{name}: actual={a} expected={b} rel={rel}");
         }
-        let v = measurement_staple(f.links()).unwrap();
         let mut max = 0.0_f64;
         for mu in 0..4 {
+            let v = measurement_staple(f.links(), mu).unwrap();
             let bytes = fs::read(dir.join(format!("measurement_staple{mu}.npy"))).unwrap();
-            let expected = npyz::NpyFile::new(&bytes[..])
-                .unwrap()
-                .into_vec::<Complex64>()
-                .unwrap();
-            for (a, b) in v.links()[mu]
-                .tensor()
-                .as_slice::<Complex64>()
-                .unwrap()
-                .iter()
-                .zip(expected)
-            {
+            let npy = npyz::NpyFile::new(&bytes[..]).unwrap();
+            assert_eq!(npy.order(), npyz::Order::Fortran);
+            let mut shape = vec![3, 3];
+            shape.extend(f.links().lattice().extents().map(|x| x as u64));
+            assert_eq!(npy.shape(), shape);
+            let expected = npy.into_vec::<Complex64>().unwrap();
+            let actual = v.tensor().as_slice::<Complex64>().unwrap();
+            assert_eq!(actual.len(), expected.len());
+            for (a, b) in actual.iter().zip(expected) {
                 max = max.max((*a - b).norm());
             }
         }
