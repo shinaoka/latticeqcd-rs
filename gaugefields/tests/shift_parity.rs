@@ -16,10 +16,10 @@ fn direct_neighbor_reads_match_all_julia_materialized_shifts() {
             for (sign, label) in [(-1, "minus"), (1, "plus")] {
                 let bytes =
                     fs::read(dir.join(format!("u{link_mu}_shift{axis}_{label}.npy"))).unwrap();
-                let shifted = npyz::NpyFile::new(&bytes[..])
-                    .unwrap()
-                    .into_vec::<Complex64>()
-                    .unwrap();
+                let npy = npyz::NpyFile::new(&bytes[..]).unwrap();
+                assert_eq!(npy.order(), npyz::Order::Fortran);
+                assert_eq!(npy.shape(), &[3, 3, 3, 2, 4, 5]);
+                let shifted = npy.into_vec::<Complex64>().unwrap();
                 for site in 0..links.lattice().nv() {
                     let neighbor = neighbor_site(site, axis, sign, links.lattice()).unwrap();
                     assert_eq!(

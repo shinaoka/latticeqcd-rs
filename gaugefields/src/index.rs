@@ -1,3 +1,9 @@
+//! Zero-based x-fast indexing corresponding to Gaugefields.jl's one-based
+//! `get_latticeindex` / component access in
+//! `src/4D/nowing/gaugefields_4D_nowing.jl:77-88`. Rust site `x + NX*(y +
+//! NY*(z + NZ*t))` is exactly Julia's loop order after subtracting one from
+//! each Julia coordinate.
+
 use crate::{require_su3, GaugeError, GaugeLinks, LatticeShape4, Mat3};
 use num_complex::Complex64;
 
