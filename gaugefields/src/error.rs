@@ -11,6 +11,16 @@ pub enum GaugeError {
     AllocationOverflow,
     #[error("matrix block at offset {offset} exceeds buffer length {len}")]
     MatrixBlockOutOfBounds { offset: usize, len: usize },
+    #[error("coordinate {coordinate} on axis {axis} exceeds extent {extent}")]
+    CoordinateOutOfBounds {
+        axis: usize,
+        coordinate: usize,
+        extent: usize,
+    },
+    #[error("site {site} exceeds lattice volume {volume}")]
+    SiteOutOfBounds { site: usize, volume: usize },
+    #[error("direction {direction} is outside 0..4")]
+    InvalidDirection { direction: usize },
     #[error("expected C64 tensor, found {found}")]
     DType { found: String },
     #[error("expected rank {expected}, found {found}")]

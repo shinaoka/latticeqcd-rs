@@ -21,7 +21,7 @@ function json_complex_arrays(io, links)
     print(io, "]")
 end
 
-function generate(name, lattice, condition; reproducible=false)
+function generate(name, lattice, condition; reproducible=false, write_shifts=false)
     out = joinpath(@__DIR__, name)
     mkpath(out)
     args = reproducible ? (; condition, randomnumber="Reproducible") : (; condition)
@@ -40,6 +40,13 @@ function generate(name, lattice, condition; reproducible=false)
     for mu in 0:3
         NPZ.npzwrite(joinpath(out, "u$(mu).npy"), links[mu + 1].U)
     end
+    if write_shifts
+        for link_mu in 0:3, axis in 1:4, sign in (-1, 1)
+            shifted = shift_U(links[link_mu + 1], sign * axis)
+            label = sign == 1 ? "plus" : "minus"
+            NPZ.npzwrite(joinpath(out, "u$(link_mu)_shift$(axis - 1)_$(label).npy"), copy(shifted.parent.Ushifted))
+        end
+    end
     open(joinpath(out, "metadata.json"), "w") do io
         print(io, "{\n  \"nc\": 3,\n")
         print(io, "  \"lattice\": [", join(lattice, ", "), "],\n")
@@ -56,3 +63,4 @@ end
 
 generate("cold_1x1x1x1", (1, 1, 1, 1), "cold")
 generate("random_2x2x2x2", (2, 2, 2, 2), "hot"; reproducible=true)
+generate("shifts_3x2x4x5", (3, 2, 4, 5), "hot"; reproducible=true, write_shifts=true)

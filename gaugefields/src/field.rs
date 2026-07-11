@@ -83,6 +83,9 @@ impl GaugeLinkTensor {
     pub fn tensor(&self) -> &Tensor {
         &self.tensor
     }
+    pub(crate) fn tensor_mut(&mut self) -> &mut Tensor {
+        &mut self.tensor
+    }
     pub const fn lattice(&self) -> LatticeShape4 {
         self.lattice
     }
@@ -117,6 +120,9 @@ impl GaugeLinks {
     }
     pub fn into_links(self) -> [GaugeLinkTensor; 4] {
         self.links
+    }
+    pub(crate) fn links_mut(&mut self) -> &mut [GaugeLinkTensor; 4] {
+        &mut self.links
     }
     pub const fn boundary(&self) -> Boundary {
         self.boundary
