@@ -15,7 +15,7 @@ fn cold_force_quantities_have_expected_shapes_and_values() {
             for j in 0..3 {
                 for i in 0..3 {
                     assert!(
-                        (block[i + 3 * j] - Complex64::new(if i == j { -12.0 } else { 0.0 }, 0.0))
+                        (block[i + 3 * j] - Complex64::new(if i == j { 18.0 } else { 0.0 }, 0.0))
                             .norm()
                             < 1e-12
                     );

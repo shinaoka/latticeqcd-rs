@@ -50,11 +50,11 @@ fn staple(u: &GaugeLinks) -> Result<GaugeLinks, GaugeError> {
     }
     Ok(out)
 }
-/// Beta-included derivative payload `dsdu = G†`.
+/// Julia-compatible plaquette payload `dsdu=(beta/2)V†` (no `1/NC`).
 pub fn dsdu(u: &GaugeLinks, beta: f64) -> Result<GaugeLinks, GaugeError> {
     let v = staple(u)?;
     let mut out = cold_su3(u.lattice())?;
-    let f = -beta / (u.nc() as f64);
+    let f = 0.5 * beta;
     for mu in 0..4 {
         for s in 0..u.lattice().nv() {
             store_link(

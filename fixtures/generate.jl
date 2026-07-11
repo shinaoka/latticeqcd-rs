@@ -1,5 +1,6 @@
 using Gaugefields
 using NPZ
+using LinearAlgebra
 
 const NC = 3
 const BETA = 6.0
@@ -49,10 +50,23 @@ function generate(name, lattice, condition; reproducible=false, write_shifts=fal
         end
     end
     if write_observables
+        gauge_action = GaugeAction(links)
+        plaqloop = make_loops_fromname("plaquette")
+        append!(plaqloop, plaqloop')
+        push!(gauge_action, BETA / 2, plaqloop)
+        momenta = initialize_TA_Gaugefields(links)
         for mu in 1:4
             staple, temp = similar(links[1]), similar(links[1])
             Gaugefields.construct_staple!(staple, links, mu, temp)
             NPZ.npzwrite(joinpath(out, "measurement_staple$(mu - 1).npy"), staple.U)
+            d = similar(links[1])
+            Gaugefields.calc_dSdUμ!(d, gauge_action, mu, links)
+            NPZ.npzwrite(joinpath(out, "dsdu$(mu - 1).npy"), d.U)
+            product = similar(links[1])
+            mul!(product, links[mu], d)
+            clear_U!(momenta[mu])
+            Traceless_antihermitian_add!(momenta[mu], 1.0, product)
+            NPZ.npzwrite(joinpath(out, "force_coeff$(mu - 1).npy"), momenta[mu].a)
         end
     end
     open(joinpath(out, "metadata.json"), "w") do io
