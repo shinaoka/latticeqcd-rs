@@ -8,6 +8,8 @@ using LinearAlgebra
 
 const NC = 3
 const BETA = 6.0
+const HMC_EPSILON = 0.5
+const HMC_DT = 0.125
 const VERSION = string(Base.pkgversion(Gaugefields))
 const CHECKOUT = dirname(dirname(pathof(Gaugefields)))
 const COMMIT = readchomp(`git -C $CHECKOUT rev-parse HEAD`)
@@ -73,6 +75,10 @@ function generate(name, lattice, condition; reproducible=false, write_shifts=fal
             clear_U!(momenta[mu])
             Traceless_antihermitian_add!(momenta[mu], 1.0, product)
             NPZ.npzwrite(joinpath(out, "force_coeff$(mu - 1).npy"), momenta[mu].a)
+            clear_U!(momenta[mu])
+            Traceless_antihermitian_add!(
+                momenta[mu], -HMC_EPSILON * HMC_DT / NC, product)
+            NPZ.npzwrite(joinpath(out, "momentum_delta$(mu - 1).npy"), momenta[mu].a)
         end
     end
     open(joinpath(out, "metadata.json"), "w") do io
