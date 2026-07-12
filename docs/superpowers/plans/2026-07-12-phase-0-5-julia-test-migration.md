@@ -14,6 +14,9 @@
 
 **Files:**
 - Create: `gaugefields/tests/julia_hmc_kernel_contracts.rs`
+- Modify: `fixtures/generate.jl`
+- Create: `fixtures/random_2x2x2x2/momentum_delta{0,1,2,3}.npy`
+- Create: `fixtures/random_4x4x4x4/momentum_delta{0,1,2,3}.npy`
 - Reference: `docs/superpowers/specs/2026-07-12-phase-0-5-julia-test-migration-design.md`
 
 - [ ] **Step 1: Write a test that initially fails because its local comparison helper is deliberately strict**
@@ -83,7 +86,15 @@ Compute the base `dsdu`, `action_gradient`, and `gauge_force` once. For each sca
 
 - [ ] **Step 5: Implement the Julia `P_update!` coefficient contract**
 
-Set finite representative values `epsilon = 0.5`, `dt = 0.125`, and calculate only in the test:
+Set finite representative values `epsilon = 0.5`, `dt = 0.125`. Extend the fixture generator to clear a Julia TA momentum field and call:
+
+```julia
+Traceless_antihermitian_add!(
+    momenta[mu], -HMC_EPSILON * HMC_DT / NC, product)
+NPZ.npzwrite(joinpath(out, "momentum_delta$(mu - 1).npy"), momenta[mu].a)
+```
+
+Then calculate the Rust update only in the test:
 
 ```rust
 let coefficient = -epsilon * dt / f.links().nc() as f64;
@@ -91,7 +102,8 @@ let force = gauge_force(f.links(), f.metadata().beta).unwrap();
 for (mu, tensor) in force.tensors().iter().enumerate() {
     let components = tensor.as_slice::<f64>().unwrap();
     let updated: Vec<_> = components.iter().map(|&value| coefficient * value).collect();
-    assert_scaled_f64(&updated, components, coefficient, &format!("P_update mu={mu}"));
+    let julia_delta = read_momentum_delta_fixture(mu);
+    assert_scaled_f64(&updated, &julia_delta, 1.0, &format!("P_update mu={mu}"));
 }
 ```
 

@@ -38,7 +38,7 @@ Gaugefields.jl's top-level suite mixes gauge-field primitives with algorithms fa
 
 | Julia invariant | Rust evidence | Disposition |
 |---|---|---|
-| Cold 4D initialization produces normalized plaquette exactly one: [`Init_cold_4D`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/init.jl#L1-L18) and the cold-start assertions in [`init.jl`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/init.jl#L133-L166). | `field_validation::cold_su3_is_identity_at_every_site_and_periodic`, `observables::cold_observables_have_exact_normalization`, and the checked cold fixture. | **covered/direct + oracle** |
+| Cold 4D initialization produces normalized plaquette exactly one: [`Init_cold_4D`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/init.jl#L1-L18) and the cold-start assertions in [`init.jl`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/init.jl#L175-L212). | `field_validation::cold_su3_is_identity_at_every_site_and_periodic`, `observables::cold_observables_have_exact_normalization`, and the checked cold fixture. | **covered/direct + oracle** |
 | Reproducible hot 4D initialization yields a stable reference field and plaquette: [`Init_hot_4D`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/init.jl#L21-L41). | `fixtures/random_2x2x2x2`, `fixtures/random_4x4x4x4`, exact-bit fixture checks, and observable parity tests. Rust deliberately does not reproduce Julia's RNG. | **covered/oracle** |
 | Julia payload is four independent direction tensors with column-major site/color order. | `layout_contract`, `fixture_roundtrip`, and non-isotropic `shift_parity`. | **covered/oracle** |
 | ILDG/binary save and reload in [`Init_ildg_4D`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/init.jl#L44-L65). | No ILDG API. | **excluded** |
@@ -56,7 +56,7 @@ Disposition: **covered/direct + oracle**. No duplicate Julia-shaped test file sh
 | Julia invariant | Rust evidence | Disposition |
 |---|---|---|
 | Four-dimensional normalization is `1/(6*NV*NC)`: [`HMC_test_4D`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/HMC_test_nowing.jl#L77-L112). | Cold normalization plus checked 2⁴/4⁴ aggregate parity. | **covered** |
-| Gauge action uses a plaquette loop and its adjoint with physical beta split as beta/2: [`HMC_test_4D`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/HMC_test_nowing.jl#L114-L121). | `wilson_action`, `docs/design/wilson-action.md`, and Julia aggregate parity. | **covered/oracle** |
+| Gauge action uses a plaquette loop and its adjoint with physical beta split as beta/2: [`HMC_test_4D`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/HMC_test_nowing.jl#L120-L124). | `wilson_action`, `docs/design/wilson-action.md`, and Julia aggregate parity. | **covered/oracle** |
 | Gauge part of `calc_action` is `-evaluate_GaugeAction/NC`: [`calc_action`](https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/HMC_test_nowing.jl#L8-L14). | Current action formula and oracle values establish one beta, but no direct beta-scaling/zero-beta regression joins the Julia convention to all Phase 4–5 APIs. | **candidate** |
 | Direct plaquette and staple contraction agree. | Rust nontrivial direct-versus-staple test is stronger than the Julia HMC smoke path. | **covered/direct** |
 
@@ -73,7 +73,7 @@ Add one contract test on a nontrivial checked field that verifies `wilson_action
 Add two focused semantic tests using the nonzero checked 2⁴ field:
 
 1. **Beta linearity across derivative APIs.** For `k` positive and negative, compare every component of `dsdu(U,k*beta)`, `gauge_force(U,k*beta)`, and `action_gradient(U,k*beta)` with `k` times the result at `beta`; also require exact zero payloads for beta zero. Report maximum residuals.
-2. **Julia momentum-update coefficient.** For representative finite `epsilon` and `dt`, verify the coefficient update computed from `gauge_force` is exactly `(-epsilon*dt/NC)` times every stored TA component. This remains a test-local calculation; it must not introduce a premature integrator or momentum-update public API.
+2. **Julia momentum-update coefficient.** For `epsilon=0.5` and `dt=0.125`, generate a checked Julia oracle by actually calling `Traceless_antihermitian_add!(p, -epsilon*dt/NC, U*dsdu)` and compare every component with the coefficient update computed from Rust `gauge_force`. This must not introduce a premature integrator or momentum-update public API.
 
 These tests supplement rather than duplicate the checked Julia oracle. They make the extracted HMC kernel convention explicit while keeping `exptU` and trajectory behavior deferred.
 

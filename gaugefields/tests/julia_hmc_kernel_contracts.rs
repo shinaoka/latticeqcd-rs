@@ -82,6 +82,25 @@ fn julia_derivative_payloads_are_linear_in_beta() {
                 scale,
                 &format!("gauge_force scale={scale} mu={mu}"),
             );
+            if scale == 0.0 {
+                assert!(actual_dsdu[mu]
+                    .tensor()
+                    .as_slice::<Complex64>()
+                    .unwrap()
+                    .iter()
+                    .all(|value| *value == Complex64::new(0.0, 0.0)));
+                assert!(actual_gradient[mu]
+                    .tensor()
+                    .as_slice::<Complex64>()
+                    .unwrap()
+                    .iter()
+                    .all(|value| *value == Complex64::new(0.0, 0.0)));
+                assert!(actual_force.tensors()[mu]
+                    .as_slice::<f64>()
+                    .unwrap()
+                    .iter()
+                    .all(|value| *value == 0.0));
+            }
         }
     }
 }
@@ -97,24 +116,19 @@ fn julia_momentum_update_coefficient_matches_p_update() {
     let mut saw_nonzero_update = false;
     for (mu, tensor) in force.tensors().iter().enumerate() {
         let components = tensor.as_slice::<f64>().unwrap();
-        let bytes = fs::read(fixture_dir().join(format!("force_coeff{mu}.npy"))).unwrap();
+        let bytes = fs::read(fixture_dir().join(format!("momentum_delta{mu}.npy"))).unwrap();
         let npy = npyz::NpyFile::new(&bytes[..]).unwrap();
         assert_eq!(npy.order(), npyz::Order::Fortran);
         assert_eq!(npy.shape(), vec![8, 2, 2, 2, 2]);
-        let julia_components = npy.into_vec::<f64>().unwrap();
-        assert_eq!(components.len(), julia_components.len());
+        let julia_delta = npy.into_vec::<f64>().unwrap();
+        assert_eq!(components.len(), julia_delta.len());
         let updated: Vec<_> = components
             .iter()
             .map(|&value| expected_coefficient * value)
             .collect();
         saw_nonzero_input |= components.iter().any(|value| *value != 0.0);
         saw_nonzero_update |= updated.iter().any(|value| *value != 0.0);
-        assert_scaled_f64(
-            &updated,
-            &julia_components,
-            expected_coefficient,
-            &format!("P_update mu={mu}"),
-        );
+        assert_scaled_f64(&updated, &julia_delta, 1.0, &format!("P_update mu={mu}"));
     }
     assert!(saw_nonzero_input && saw_nonzero_update);
 }
