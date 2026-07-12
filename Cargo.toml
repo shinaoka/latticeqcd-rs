@@ -1,0 +1,22 @@
+[workspace]
+members = ["gaugefields"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/shinaoka/gaugefields-rs"
+
+[workspace.dependencies]
+num-complex = "0.4"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+npyz = { version = "0.8", features = ["complex"] }
+tenferro-tensor = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "f504ba0a8668baca89ab1d4348b9475ff85377b4", default-features = false }
+tenferro-runtime = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "f504ba0a8668baca89ab1d4348b9475ff85377b4", default-features = false, features = ["cpu-faer"] }
+tenferro-cpu = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "f504ba0a8668baca89ab1d4348b9475ff85377b4", default-features = false, features = ["cpu-faer"] }
+tenferro-ad = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "f504ba0a8668baca89ab1d4348b9475ff85377b4", default-features = false, features = ["cpu-faer"] }
+tenferro-internal-ops = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "f504ba0a8668baca89ab1d4348b9475ff85377b4", default-features = false, features = ["autodiff"] }
+computegraph = { git = "https://github.com/tensor4all/computegraph-rs.git", rev = "691def2d82fd4367b397d61209449f68e82050b7" }
+tidu = { git = "https://github.com/tensor4all/tidu-rs.git", rev = "57a2e7ebe7738ca2f8b5c96f4c6ce4e467b20495" }

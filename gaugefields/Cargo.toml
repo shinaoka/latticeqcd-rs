@@ -1,0 +1,26 @@
+[package]
+name = "gaugefields"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+autodiff = ["dep:tenferro-ad", "dep:tenferro-internal-ops", "dep:computegraph", "dep:tidu"]
+
+[dependencies]
+num-complex.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+npyz.workspace = true
+tenferro-tensor.workspace = true
+tenferro-ad = { workspace = true, optional = true }
+tenferro-internal-ops = { workspace = true, optional = true }
+computegraph = { workspace = true, optional = true }
+tidu = { workspace = true, optional = true }
+
+[dev-dependencies]
+tenferro-runtime = { workspace = true, features = ["cpu-faer"] }
+tenferro-cpu = { workspace = true, features = ["cpu-faer"] }
