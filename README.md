@@ -33,6 +33,23 @@ executor.register_extension(register_runtime)?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-See `cargo run -p gaugefields --example traced_wilson_action --all-features`
-for a checked direct/traced parity example. Phase 6 supplies host-reference
-extension execution only; autodiff rules are not yet part of the public API.
+With the `autodiff` feature, applications register the role-split Wilson rules
+on each application-owned AD context separately from executor registration:
+
+```rust
+use gaugefields::ad_rules;
+use tenferro_ad::AdContext;
+
+let ad = AdContext::builder()
+    .with_extension_rules(ad_rules()?)
+    .build()?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+The supported path is `Wilson action -> JVP -> linear transpose -> force`.
+Only active link directions appear as JVP tangent inputs, and reverse mode
+accepts arbitrary finite scalar seeds. There is intentionally no direct primal
+VJP or force AD rule, so differentiation through force is a typed unsupported
+operation. See `docs/design/ad-convention.md` for the complex convention and
+`cargo run -p gaugefields --example traced_wilson_action --all-features` for
+checked direct/traced action parity.

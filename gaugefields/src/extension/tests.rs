@@ -2,8 +2,12 @@ use super::*;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::path::Path;
+#[cfg(feature = "autodiff")]
+use tenferro_cpu::CpuBackend;
 use tenferro_runtime::extension::ExtensionOp;
 use tenferro_runtime::{DType, SymDim};
+#[cfg(feature = "autodiff")]
+use tenferro_runtime::{GraphCompiler, GraphExecutor, TracedTensor};
 use tenferro_tensor::{
     Buffer, BufferHandle, DeviceId, DeviceKind, Error as TensorError, GpuBackendKind, MemoryKind,
     Placement, Tensor, TypedTensor,
@@ -327,6 +331,92 @@ fn random_fixture_jvp_matches_finite_difference_and_direct_gradient() {
         (actual - finite_difference).abs() < 1e-7,
         "actual={actual} finite_difference={finite_difference} residual={}",
         (actual - finite_difference).abs()
+    );
+}
+
+#[cfg(feature = "autodiff")]
+#[test]
+fn traced_all_direction_jvp_graph_matches_sum_and_finite_difference_sweep() {
+    let base = random_fixture_links();
+    let beta = 5.7;
+    let active_dirs = [0, 1, 2, 3];
+    let tangents = active_dirs
+        .iter()
+        .map(|&mu| tangent(mu, 9 * base.lattice().nv()))
+        .collect::<Vec<_>>();
+    let links: [TracedTensor; 4] = std::array::from_fn(|mu| {
+        TracedTensor::from_vec_col_major(
+            base.links()[mu].typed().shape().to_vec(),
+            base.links()[mu].typed().host_data().unwrap().to_vec(),
+        )
+        .unwrap()
+    });
+    let tangent_tensors = tangents
+        .iter()
+        .map(|values| {
+            TracedTensor::from_vec_col_major(vec![3, 3, 2, 2, 2, 2], values.clone()).unwrap()
+        })
+        .collect::<Vec<_>>();
+    let inputs = [
+        &links[0],
+        &links[1],
+        &links[2],
+        &links[3],
+        &tangent_tensors[0],
+        &tangent_tensors[1],
+        &tangent_tensors[2],
+        &tangent_tensors[3],
+    ];
+    let traced = apply(
+        Arc::new(WilsonActionJvpOp::new(beta, active_dirs.to_vec()).unwrap()),
+        &inputs,
+    )
+    .unwrap()
+    .into_iter()
+    .next()
+    .unwrap();
+    let program = GraphCompiler::new().compile(&traced).unwrap();
+    let mut executor = GraphExecutor::new(CpuBackend::new());
+    executor
+        .register_extension(crate::register_runtime)
+        .unwrap();
+    let actual = executor.run(&program).unwrap().as_slice::<f64>().unwrap()[0];
+    let gradient = crate::action_gradient(&base, beta).unwrap();
+    let direct = active_dirs
+        .iter()
+        .enumerate()
+        .map(|(index, &mu)| {
+            gradient[mu]
+                .typed()
+                .host_data()
+                .unwrap()
+                .iter()
+                .zip(&tangents[index])
+                .map(|(g, delta)| (g.conj() * delta).re)
+                .sum::<f64>()
+        })
+        .sum::<f64>();
+    let sweep = [1e-3, 2.5e-4, 6.25e-5, 1.5625e-5].map(|h| {
+        let fd = (crate::wilson_action(&perturbed_links(&base, &active_dirs, &tangents, h), beta)
+            .unwrap()
+            - crate::wilson_action(&perturbed_links(&base, &active_dirs, &tangents, -h), beta)
+                .unwrap())
+            / (2.0 * h);
+        (h, fd, (actual - fd).abs())
+    });
+    let best = sweep.iter().min_by(|a, b| a.2.total_cmp(&b.2)).unwrap();
+    assert!(actual.is_finite() && direct.is_finite() && best.1.is_finite());
+    assert!(
+        (actual - direct).abs() < 1e-10,
+        "actual={actual} direct={direct} residual={}",
+        (actual - direct).abs()
+    );
+    assert!(
+        best.2 < 1e-6,
+        "actual={actual} best_h={} fd={} residual={} sweep={sweep:?}",
+        best.0,
+        best.1,
+        best.2
     );
 }
 

@@ -143,6 +143,11 @@ impl WilsonActionOp {
             beta: beta.to_bits(),
         })
     }
+
+    #[cfg(feature = "autodiff")]
+    pub(crate) fn beta(&self) -> f64 {
+        f64::from_bits(self.beta)
+    }
 }
 
 impl ExtensionOp for WilsonActionOp {
@@ -213,6 +218,16 @@ impl WilsonActionJvpOp {
             beta: beta.to_bits(),
             active_dirs,
         })
+    }
+
+    #[cfg(feature = "autodiff")]
+    pub(crate) fn beta(&self) -> f64 {
+        f64::from_bits(self.beta)
+    }
+
+    #[cfg(feature = "autodiff")]
+    pub(crate) fn active_dirs(&self) -> &[usize] {
+        &self.active_dirs
     }
 }
 
