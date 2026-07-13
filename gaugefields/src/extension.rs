@@ -143,6 +143,10 @@ impl WilsonActionOp {
             beta: beta.to_bits(),
         })
     }
+
+    pub(crate) fn beta(&self) -> f64 {
+        f64::from_bits(self.beta)
+    }
 }
 
 impl ExtensionOp for WilsonActionOp {

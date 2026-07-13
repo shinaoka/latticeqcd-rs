@@ -1,5 +1,7 @@
-use crate::extension::{WILSON_ACTION_FAMILY, WILSON_ACTION_JVP_FAMILY};
-use computegraph::types::{LocalValueId, ValueKey};
+use crate::extension::{
+    WilsonActionJvpOp, WilsonActionOp, WILSON_ACTION_FAMILY, WILSON_ACTION_JVP_FAMILY,
+};
+use computegraph::types::{LocalValueId, OperationRole, ValueKey, ValueRef};
 use std::sync::Arc;
 use tenferro_ops::ad::PrimitiveRuleBuilder;
 use tenferro_ops::std_tensor_op::StdTensorOp;
@@ -19,17 +21,72 @@ impl ExtensionLinearizeRule for WilsonActionLinearize {
 
     fn linearize(
         &self,
-        _op: &dyn ExtensionOp,
-        _builder: &mut dyn PrimitiveRuleBuilder,
-        _primal_in: &[ValueKey<StdTensorOp>],
-        _primal_out: &[ValueKey<StdTensorOp>],
-        _tangent_in: &[Option<LocalValueId>],
+        op: &dyn ExtensionOp,
+        builder: &mut dyn PrimitiveRuleBuilder,
+        primal_in: &[ValueKey<StdTensorOp>],
+        primal_out: &[ValueKey<StdTensorOp>],
+        tangent_in: &[Option<LocalValueId>],
         _ctx: &mut ShapeGuardContext,
     ) -> ADRuleResult<Vec<Option<LocalValueId>>> {
-        Err(ADRuleError::unsupported(
-            WILSON_ACTION_FAMILY,
-            ADRuleKind::Jvp,
-        ))
+        let action = op
+            .as_any()
+            .downcast_ref::<WilsonActionOp>()
+            .ok_or_else(|| {
+                ADRuleError::invalid_input(
+                    WILSON_ACTION_FAMILY,
+                    ADRuleKind::Jvp,
+                    "action payload downcast failed",
+                )
+            })?;
+        if primal_in.len() != 4 || primal_out.len() != 1 || tangent_in.len() != 4 {
+            return Err(ADRuleError::invalid_input(
+                WILSON_ACTION_FAMILY,
+                ADRuleKind::Jvp,
+                "expected four primal inputs, one output, and four tangent slots",
+            ));
+        }
+        let active_dirs = tangent_in
+            .iter()
+            .enumerate()
+            .filter_map(|(mu, tangent)| tangent.is_some().then_some(mu))
+            .collect::<Vec<_>>();
+        if active_dirs.is_empty() {
+            return Ok(vec![None]);
+        }
+        let mut inputs = Vec::with_capacity(4 + active_dirs.len());
+        inputs.extend(primal_in.iter().cloned().map(ValueRef::External));
+        for &mu in &active_dirs {
+            let tangent = tangent_in[mu].ok_or_else(|| {
+                ADRuleError::invalid_input(
+                    WILSON_ACTION_FAMILY,
+                    ADRuleKind::Jvp,
+                    "active tangent slot disappeared during graph construction",
+                )
+            })?;
+            inputs.push(ValueRef::Local(tangent));
+        }
+        let jvp = WilsonActionJvpOp::new(action.beta(), active_dirs).map_err(|error| {
+            ADRuleError::invalid_input(WILSON_ACTION_FAMILY, ADRuleKind::Jvp, error.to_string())
+        })?;
+        let active_mask = std::iter::repeat_n(false, 4)
+            .chain(std::iter::repeat_n(true, inputs.len() - 4))
+            .collect();
+        let outputs = builder.add_operation(
+            StdTensorOp::Extension(Arc::new(jvp)),
+            inputs,
+            OperationRole::Linearized { active_mask },
+        );
+        outputs
+            .first()
+            .copied()
+            .map(|output| vec![Some(output)])
+            .ok_or_else(|| {
+                ADRuleError::invalid_input(
+                    WILSON_ACTION_FAMILY,
+                    ADRuleKind::Jvp,
+                    "JVP operation emitted no output",
+                )
+            })
     }
 }
 
