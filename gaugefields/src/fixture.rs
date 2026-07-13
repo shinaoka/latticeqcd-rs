@@ -4,7 +4,7 @@ use num_complex::Complex64;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{fs, path::Path};
-use tenferro_tensor::Tensor;
+use tenferro_tensor::TypedTensor;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -84,9 +84,9 @@ pub fn load_fixture(directory: impl AsRef<Path>) -> Result<Fixture, GaugeError> 
                 detail: e.to_string(),
             })?;
         let shape = expected.iter().map(|&n| n as usize).collect::<Vec<_>>();
-        let tensor = Tensor::from_vec_col_major(shape, values)
+        let tensor = TypedTensor::from_vec_col_major(shape, values)
             .map_err(|e| GaugeError::Tensor(e.to_string()))?;
-        links.push(GaugeLinkTensor::new(tensor, lattice)?);
+        links.push(GaugeLinkTensor::from_typed(tensor, lattice)?);
     }
     let links: [GaugeLinkTensor; 4] =
         links.try_into().map_err(|_| GaugeError::MetadataMismatch {

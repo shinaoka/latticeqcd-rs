@@ -8,10 +8,7 @@ fn direct_neighbor_reads_match_all_julia_materialized_shifts() {
     let fixture = load_fixture(&dir).unwrap();
     let links = fixture.links();
     for link_mu in 0..4 {
-        let source = links.links()[link_mu]
-            .tensor()
-            .as_slice::<Complex64>()
-            .unwrap();
+        let source = links.links()[link_mu].typed().host_data().unwrap();
         for axis in 0..4 {
             for (sign, label) in [(-1, "minus"), (1, "plus")] {
                 let bytes =

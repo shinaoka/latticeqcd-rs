@@ -1,6 +1,7 @@
 use crate::GaugeError;
 use num_complex::Complex64;
-use tenferro_tensor::{DType, Tensor};
+use std::fmt;
+use tenferro_tensor::{Tensor, TypedTensor};
 
 /// Four positive lattice extents ordered `[NX, NY, NZ, NT]`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,27 +33,18 @@ pub enum Boundary {
     Periodic,
 }
 
-/// One validated direction tensor with runtime shape `[NC,NC,NX,NY,NZ,NT]`.
-///
-/// `NC` is stored at runtime rather than as a const generic because the owned
-/// tenferro [`Tensor`] is dtype- and shape-erased. This wrapper validates equal
-/// color axes without imposing an SU(3)-only storage type. Fixed-size SU(3)
-/// kernels call [`require_su3`](crate::require_su3) first and return
-/// [`GaugeError::UnsupportedNc`](crate::GaugeError::UnsupportedNc) otherwise.
-#[derive(Debug)]
+/// One validated C64 direction tensor with shape `[NC,NC,NX,NY,NZ,NT]`.
 pub struct GaugeLinkTensor {
-    tensor: Tensor,
+    tensor: TypedTensor<Complex64>,
     lattice: LatticeShape4,
     nc: usize,
 }
 
 impl GaugeLinkTensor {
-    pub fn new(tensor: Tensor, lattice: LatticeShape4) -> Result<Self, GaugeError> {
-        if tensor.dtype() != DType::C64 {
-            return Err(GaugeError::DType {
-                found: format!("{:?}", tensor.dtype()),
-            });
-        }
+    pub fn from_typed(
+        tensor: TypedTensor<Complex64>,
+        lattice: LatticeShape4,
+    ) -> Result<Self, GaugeError> {
         if tensor.shape().len() != 6 {
             return Err(GaugeError::Rank {
                 expected: 6,
@@ -74,17 +66,42 @@ impl GaugeLinkTensor {
                 found: tensor.shape().to_vec(),
             });
         }
+        let bytes = nc
+            .checked_mul(nc)
+            .and_then(|n| n.checked_mul(lattice.nv()))
+            .and_then(|n| n.checked_mul(std::mem::size_of::<Complex64>()))
+            .ok_or(GaugeError::AllocationOverflow)?;
+        if bytes > isize::MAX as usize {
+            return Err(GaugeError::AllocationOverflow);
+        }
+        tensor
+            .host_data()
+            .map_err(|source| GaugeError::Tensor(source.to_string()))?;
         Ok(Self {
             tensor,
             lattice,
             nc,
         })
     }
-    pub fn tensor(&self) -> &Tensor {
+    pub fn try_from_tensor(tensor: Tensor, lattice: LatticeShape4) -> Result<Self, GaugeError> {
+        match tensor {
+            Tensor::C64(tensor) => Self::from_typed(tensor, lattice),
+            other => Err(GaugeError::DType {
+                found: format!("{:?}", other.dtype()),
+            }),
+        }
+    }
+    pub fn typed(&self) -> &TypedTensor<Complex64> {
         &self.tensor
     }
-    pub(crate) fn tensor_mut(&mut self) -> &mut Tensor {
+    pub(crate) fn typed_mut(&mut self) -> &mut TypedTensor<Complex64> {
         &mut self.tensor
+    }
+    pub fn into_typed(self) -> TypedTensor<Complex64> {
+        self.tensor
+    }
+    pub fn into_tensor(self) -> Tensor {
+        self.tensor.into()
     }
     pub const fn lattice(&self) -> LatticeShape4 {
         self.lattice
@@ -94,10 +111,85 @@ impl GaugeLinkTensor {
     }
 }
 
-#[derive(Debug)]
+impl fmt::Debug for GaugeLinkTensor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GaugeLinkTensor")
+            .field("shape", &self.tensor.shape())
+            .field("lattice", &self.lattice)
+            .field("nc", &self.nc)
+            .finish()
+    }
+}
+
 pub struct GaugeLinks {
     links: [GaugeLinkTensor; 4],
     boundary: Boundary,
+}
+
+impl fmt::Debug for GaugeLinks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GaugeLinks")
+            .field("lattice", &self.lattice())
+            .field("nc", &self.nc())
+            .field("boundary", &self.boundary)
+            .finish()
+    }
+}
+
+/// Four compact host F64 tensors with shape `[8,NX,NY,NZ,NT]`.
+pub struct TaGaugeField {
+    tensors: [TypedTensor<f64>; 4],
+    lattice: LatticeShape4,
+}
+
+impl TaGaugeField {
+    pub fn new(tensors: [TypedTensor<f64>; 4], lattice: LatticeShape4) -> Result<Self, GaugeError> {
+        let [nx, ny, nz, nt] = lattice.extents();
+        let expected = vec![8, nx, ny, nz, nt];
+        for tensor in &tensors {
+            if tensor.rank() != 5 {
+                return Err(GaugeError::Rank {
+                    expected: 5,
+                    found: tensor.rank(),
+                });
+            }
+            if tensor.shape() != expected {
+                return Err(GaugeError::Shape {
+                    expected: expected.clone(),
+                    found: tensor.shape().to_vec(),
+                });
+            }
+            let count = 8usize
+                .checked_mul(lattice.nv())
+                .and_then(|n| n.checked_mul(std::mem::size_of::<f64>()))
+                .ok_or(GaugeError::AllocationOverflow)?;
+            if count > isize::MAX as usize {
+                return Err(GaugeError::AllocationOverflow);
+            }
+            tensor
+                .host_data()
+                .map_err(|source| GaugeError::Tensor(source.to_string()))?;
+        }
+        Ok(Self { tensors, lattice })
+    }
+    pub fn tensors(&self) -> &[TypedTensor<f64>; 4] {
+        &self.tensors
+    }
+    pub fn into_tensors(self) -> [TypedTensor<f64>; 4] {
+        self.tensors
+    }
+    pub const fn lattice(&self) -> LatticeShape4 {
+        self.lattice
+    }
+}
+
+impl fmt::Debug for TaGaugeField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TaGaugeField")
+            .field("shape", &self.tensors[0].shape())
+            .field("lattice", &self.lattice)
+            .finish()
+    }
 }
 
 impl GaugeLinks {
@@ -162,9 +254,9 @@ pub fn cold_su3(lattice: LatticeShape4) -> Result<GaugeLinks, GaugeError> {
         }
     }
     let make = || {
-        Tensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], values.clone())
+        TypedTensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], values.clone())
             .map_err(|e| GaugeError::Tensor(e.to_string()))
-            .and_then(|t| GaugeLinkTensor::new(t, lattice))
+            .and_then(|t| GaugeLinkTensor::from_typed(t, lattice))
     };
     GaugeLinks::new([make()?, make()?, make()?, make()?])
 }

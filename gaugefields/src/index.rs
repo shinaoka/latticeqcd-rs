@@ -5,7 +5,6 @@
 //! each Julia coordinate.
 
 use crate::{require_su3, GaugeError, GaugeLinks, LatticeShape4, Mat3};
-use num_complex::Complex64;
 
 pub fn site_index(coords: [usize; 4], lattice: LatticeShape4) -> Result<usize, GaugeError> {
     let [nx, ny, nz, _] = lattice.extents();
@@ -68,8 +67,8 @@ pub fn load_link(links: &GaugeLinks, direction: usize, site: usize) -> Result<Ma
     }
     let offset = site.checked_mul(9).ok_or(GaugeError::AllocationOverflow)?;
     Mat3::load(
-        link.tensor()
-            .as_slice::<Complex64>()
+        link.typed()
+            .host_data()
             .map_err(|e| GaugeError::Tensor(e.to_string()))?,
         offset,
     )
@@ -91,8 +90,8 @@ pub fn store_link(
         .ok_or(GaugeError::InvalidDirection { direction })?;
     let offset = site.checked_mul(9).ok_or(GaugeError::AllocationOverflow)?;
     value.store(
-        link.tensor_mut()
-            .as_slice_mut::<Complex64>()
+        link.typed_mut()
+            .host_data_mut()
             .map_err(|e| GaugeError::Tensor(e.to_string()))?,
         offset,
     )

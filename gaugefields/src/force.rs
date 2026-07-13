@@ -1,6 +1,8 @@
-use crate::{neighbor_site, require_su3, GaugeError, GaugeLinkTensor, GaugeLinks, Mat3};
+use crate::{
+    neighbor_site, require_su3, GaugeError, GaugeLinkTensor, GaugeLinks, Mat3, TaGaugeField,
+};
 use num_complex::Complex64 as C;
-use tenferro_tensor::Tensor;
+use tenferro_tensor::TypedTensor;
 type NeighborTable = Vec<[usize; 4]>;
 
 fn checked_count(items_per_site: usize, nv: usize, item_size: usize) -> Result<usize, GaugeError> {
@@ -71,8 +73,8 @@ fn context(u: &GaugeLinks) -> Result<(Vec<&[C]>, NeighborTable, NeighborTable), 
         .links()
         .iter()
         .map(|link| {
-            link.tensor()
-                .as_slice::<C>()
+            link.typed()
+                .host_data()
                 .map_err(|e| GaugeError::Tensor(e.to_string()))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -101,9 +103,9 @@ fn complex_output(
         data.extend_from_slice(out.as_array());
     }
     debug_assert_eq!(data.len(), count);
-    let tensor = Tensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], data)
+    let tensor = TypedTensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], data)
         .map_err(|e| GaugeError::Tensor(e.to_string()))?;
-    GaugeLinkTensor::new(tensor, u.lattice())
+    GaugeLinkTensor::from_typed(tensor, u.lattice())
 }
 fn complex_outputs(
     u: &GaugeLinks,
@@ -126,17 +128,8 @@ pub fn dsdu(u: &GaugeLinks, beta: f64) -> Result<[GaugeLinkTensor; 4], GaugeErro
 pub fn action_gradient(u: &GaugeLinks, beta: f64) -> Result<[GaugeLinkTensor; 4], GaugeError> {
     complex_outputs(u, beta, true)
 }
-/// Four `[8,NX,NY,NZ,NT]` F64 coefficient tensors.
-pub struct GaugeForce {
-    tensors: [Tensor; 4],
-}
-impl GaugeForce {
-    pub fn tensors(&self) -> &[Tensor; 4] {
-        &self.tensors
-    }
-}
 /// TA coefficients of `U_mu * dsdu_mu`, without integrator or extra `1/NC` factors.
-pub fn gauge_force(u: &GaugeLinks, beta: f64) -> Result<GaugeForce, GaugeError> {
+pub fn gauge_force(u: &GaugeLinks, beta: f64) -> Result<TaGaugeField, GaugeError> {
     let (src, p, m) = context(u)?;
     let count = checked_count(8, u.lattice().nv(), std::mem::size_of::<f64>())?;
     let [nx, ny, nz, nt] = u.lattice().extents();
@@ -155,13 +148,14 @@ pub fn gauge_force(u: &GaugeLinks, beta: f64) -> Result<GaugeForce, GaugeError> 
         }
         debug_assert_eq!(data.len(), count);
         tensors.push(
-            Tensor::from_vec_col_major(vec![8, nx, ny, nz, nt], data)
+            TypedTensor::from_vec_col_major(vec![8, nx, ny, nz, nt], data)
                 .map_err(|e| GaugeError::Tensor(e.to_string()))?,
         );
     }
-    Ok(GaugeForce {
-        tensors: tensors
+    TaGaugeField::new(
+        tensors
             .try_into()
             .map_err(|_| GaugeError::Tensor("four force tensors".into()))?,
-    })
+        u.lattice(),
+    )
 }

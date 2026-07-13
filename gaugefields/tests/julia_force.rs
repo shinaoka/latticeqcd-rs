@@ -34,7 +34,7 @@ fn julia_dsdu_and_ta_force_match_all_components() {
             shape.extend(f.links().lattice().extents().map(|x| x as u64));
             assert_eq!(npy.shape(), shape);
             let e = npy.into_vec::<Complex64>().unwrap();
-            let actual = derivative.tensor().as_slice::<Complex64>().unwrap();
+            let actual = derivative.typed().host_data().unwrap();
             assert_eq!(actual.len(), e.len());
             for (a, b) in actual.iter().zip(&e) {
                 assert!(
@@ -52,7 +52,7 @@ fn julia_dsdu_and_ta_force_match_all_components() {
             shape.extend(f.links().lattice().extents().map(|x| x as u64));
             assert_eq!(npy.shape(), shape);
             let e = npy.into_vec::<f64>().unwrap();
-            let actual = force.tensors()[mu].as_slice::<f64>().unwrap();
+            let actual = force.tensors()[mu].host_data().unwrap();
             assert_eq!(actual.len(), e.len());
             for (a, b) in actual.iter().zip(e) {
                 mf = mf.max(residual(*a, b));

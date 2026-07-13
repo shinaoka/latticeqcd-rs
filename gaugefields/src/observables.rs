@@ -1,6 +1,6 @@
 use crate::{load_link, neighbor_site, require_su3, GaugeError, GaugeLinkTensor, GaugeLinks, Mat3};
 use num_complex::Complex64;
-use tenferro_tensor::Tensor;
+use tenferro_tensor::TypedTensor;
 
 fn forward(links: &GaugeLinks) -> Result<Vec<[usize; 4]>, GaugeError> {
     let l = links.lattice();
@@ -79,7 +79,7 @@ pub fn measurement_staple(
     }
     debug_assert_eq!(values.len(), value_count);
     let [nx, ny, nz, nt] = links.lattice().extents();
-    let tensor = Tensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], values)
+    let tensor = TypedTensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], values)
         .map_err(|error| GaugeError::Tensor(error.to_string()))?;
-    GaugeLinkTensor::new(tensor, links.lattice())
+    GaugeLinkTensor::from_typed(tensor, links.lattice())
 }

@@ -49,7 +49,7 @@ fn julia_random_observables_and_staples_match() {
             shape.extend(f.links().lattice().extents().map(|x| x as u64));
             assert_eq!(npy.shape(), shape);
             let expected = npy.into_vec::<Complex64>().unwrap();
-            let actual = v.tensor().as_slice::<Complex64>().unwrap();
+            let actual = v.typed().host_data().unwrap();
             assert_eq!(actual.len(), expected.len());
             for (a, b) in actual.iter().zip(expected) {
                 assert!(
