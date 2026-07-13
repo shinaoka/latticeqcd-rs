@@ -2,6 +2,17 @@ use num_complex::Complex64;
 use tenferro_tensor::Tensor;
 
 #[test]
+fn dependency_manifest_uses_phase_6_snapshot() {
+    let manifest =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../Cargo.toml")).unwrap();
+    let phase_6 = "51bc0a7bef274e20d08fc054856cb4d74c284cbe";
+    assert_eq!(manifest.matches(phase_6).count(), 5);
+    assert!(!manifest.contains("f504ba0a8668baca89ab1d4348b9475ff85377b4"));
+    assert!(manifest.contains("691def2d82fd4367b397d61209449f68e82050b7"));
+    assert!(manifest.contains("57a2e7ebe7738ca2f8b5c96f4c6ce4e467b20495"));
+}
+
+#[test]
 fn pinned_tenferro_constructs_column_major_c64_tensor() {
     let values = vec![Complex64::new(1.0, 2.0), Complex64::new(3.0, 4.0)];
     let tensor = Tensor::from_vec_col_major(vec![2, 1], values.clone()).unwrap();
