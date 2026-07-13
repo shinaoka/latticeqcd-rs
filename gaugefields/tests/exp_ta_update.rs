@@ -5,6 +5,8 @@ use tenferro_cpu::CpuBackend;
 use tenferro_runtime::CacheStats;
 use tenferro_tensor::TypedTensor;
 
+use std::time::Instant;
+
 fn momentum(lattice: LatticeShape4) -> TaGaugeField {
     let [nx, ny, nz, nt] = lattice.extents();
     let tensors = std::array::from_fn(|mu| {
@@ -68,9 +70,33 @@ fn context_contract_cache_and_zero_update() -> Result<(), GaugeError> {
     let momentum = momentum(lattice);
     let mut context = CpuEvolutionContext::new(CpuBackend::new());
     exp_ta_update(&mut context, &mut links, 0.0, &momentum)?;
-    for mu in 0..4 {
-        assert_eq!(links.links()[mu].typed().host_data().unwrap(), before[mu]);
+    for (mu, expected) in before.iter().enumerate() {
+        assert_eq!(links.links()[mu].typed().host_data().unwrap(), expected);
     }
     assert!(!format!("{context:?}").contains("cache:"));
+    Ok(())
+}
+
+#[test]
+#[ignore = "release-only scaling diagnostic"]
+fn release_update_scaling() -> Result<(), GaugeError> {
+    for extent in [2, 4, 8] {
+        let lattice = LatticeShape4::new([extent; 4])?;
+        let mut links = cold_su3(lattice)?;
+        let momentum = momentum(lattice);
+        let mut context = CpuEvolutionContext::new(CpuBackend::new());
+        exp_ta_update(&mut context, &mut links, 0.01, &momentum)?;
+        let started = Instant::now();
+        for _ in 0..3 {
+            exp_ta_update(&mut context, &mut links, 0.01, &momentum)?;
+        }
+        let elapsed = started.elapsed();
+        eprintln!(
+            "evolution scaling extent={extent} sites={} elapsed_ms={:.3} ns_per_site_step={:.1}",
+            lattice.nv(),
+            elapsed.as_secs_f64() * 1e3,
+            elapsed.as_nanos() as f64 / (3 * lattice.nv()) as f64
+        );
+    }
     Ok(())
 }

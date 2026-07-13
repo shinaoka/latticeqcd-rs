@@ -1,6 +1,6 @@
 # Phase 6–8: tenferro graph integration, autodiff, and SU(3) evolution
 
-Status: proposed
+Status: implemented through Phase 8
 Date: 2026-07-13
 
 ## 1. Purpose and delivery
@@ -148,7 +148,7 @@ Illustrative application setup (exact builder names follow the pinned tenferro
 revision):
 
 ```text
-let backend = CpuBackend::try_new()?;
+let backend = CpuBackend::new();
 let mut executor = GraphExecutor::new(backend);
 executor.register_extension(gaugefields::register_runtime)?;
 
@@ -156,13 +156,12 @@ let ad = AdContext::builder()
     .with_extension_rules(gaugefields::ad_rules()?)
     .build()?;
 
-let mut evolution = CpuEvolutionContext::new(CpuBackend::try_new()?);
+let mut evolution = CpuEvolutionContext::new(CpuBackend::new());
 ```
 
-The snippet is illustrative rather than a public doctest until the API lands.
-The implementation PR must replace it with a checked example using the exact
-pinned API. The library exposes registration functions but performs no hidden
-initialization.
+The library exposes registration functions but performs no hidden
+initialization. The README contains the checked evolution setup using the exact
+pinned API.
 
 ## 7. Shared numerical-kernel architecture
 
@@ -350,8 +349,10 @@ The cache field remains private. The context has a compact hand-written `Debug`,
 `exp_ta_update` takes the application-owned evolution context, enters
 `BackendSessionHost::with_backend_session_cached`, and uses stable contraction
 cache slots `0..3` for link directions `mu=0..3`. Repeated same-shape updates
-therefore reuse analysis plans as well as the backend context, provider choice,
-and buffer pool. All four contraction outputs are validated before any link is
+reuse the cache owner, backend context, provider choice, and buffer pool. The
+pinned cpu-faer provider routes unconjugated multiplication through its strided
+path, so `CacheStats` can remain at zero entries; providers that retain GEMM
+analysis may populate those same slots. All four contraction outputs are validated before any link is
 replaced, so an error leaves the field unchanged. The operation does not
 construct a backend, cache, or graph executor internally. Phase 8 is an
 explicit CPU/host API; a later device implementation requires a separately
@@ -383,8 +384,9 @@ as a naive downstream loop. Packing or canonicalization, if required by the
 selected API, is explicit, same-placement, measured, and recorded in the work
 log.
 
-`normalize_su3` projects a `Mat3` back to SU(3) using the Julia-compatible
-orthonormalization and determinant-phase correction. It rejects non-finite or
+`normalize_su3` projects a `Mat3` back to SU(3) using Julia's NC=3 row
+Gram--Schmidt step and conjugated cross-product third row. Norms at or below
+`1e-30` are treated as singular. It rejects non-finite or
 numerically singular input with a typed error. Field-level normalization may be
 crate-private until an external use case justifies another public API.
 
@@ -397,7 +399,9 @@ sequence
 U(dt/2) -> P(dt) -> U(dt/2)
 ```
 
-and the Phase 5 action/force plus the public Phase 8 numerical kernels. A fixed
+and the Phase 5 action/force plus the public Phase 8 numerical kernels. Momentum
+uses `P=(i/2) sum_a p_a lambda_a`, `K=(1/2) sum_a p_a^2`, and
+`p <- p - dt*gauge_force/NC`. A fixed
 seed makes regression runs reproducible. It exists to test:
 
 - reversibility after momentum negation;
@@ -416,8 +420,8 @@ performance claim. It does not justify exposing the driver as a public sampler.
 - degenerate and near-degenerate fixtures prove the fallback branch;
 - results satisfy unitarity and determinant-one tolerances;
 - `exp_ta_update` agrees with a small explicit `Mat3` reference calculation;
-- two same-shape updates retain the same nonzero contraction-cache entry count,
-  and `clear_cache` resets it to zero;
+- two same-shape updates report stable provider-dependent cache stats, and
+  `clear_cache` resets retained entries to zero;
 - injected contraction failure at each direction leaves all four links
   bit-for-bit unchanged;
 - normalization fixtures cover drift, singular rejection, and non-finite input;

@@ -29,13 +29,13 @@ fn injected_direction_failures_leave_every_link_bitwise_unchanged() {
         );
         FAIL_DIRECTION.store(usize::MAX, Ordering::Relaxed);
         assert!(matches!(result, Err(GaugeError::Evolution { .. })));
-        for mu in 0..4 {
+        for (mu, expected_direction) in before.iter().enumerate() {
             for (actual, expected) in links.links()[mu]
                 .typed()
                 .host_data()
                 .unwrap()
                 .iter()
-                .zip(&before[mu])
+                .zip(expected_direction)
             {
                 assert_eq!(actual.re.to_bits(), expected.re.to_bits());
                 assert_eq!(actual.im.to_bits(), expected.im.to_bits());
