@@ -1,6 +1,7 @@
 //! Validated SU(3) lattice gauge fields backed by tenferro tensors.
 
 mod error;
+mod extension;
 mod field;
 mod fixture;
 mod force;
@@ -8,9 +9,6 @@ mod index;
 mod kernel;
 mod mat3;
 mod observables;
-
-#[cfg(feature = "autodiff")]
-pub mod autodiff;
 
 pub use error::GaugeError;
 pub use field::{
