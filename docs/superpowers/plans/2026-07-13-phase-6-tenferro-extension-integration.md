@@ -119,7 +119,7 @@ git commit -m "refactor: adopt typed gauge storage"
 
 - [ ] **Step 1: Add source and numerical regressions**
 
-Add tests proving direct action, JVP directional contraction, and force share results on cold, `random_2x2x2x2`, and `random_4x4x4x4`. Add a source contract forbidding `load_link(` inside the site loops in `observables.rs` and requiring one `PreparedGaugeField::new` boundary.
+Add tests proving direct action, JVP directional contraction, and force share results on cold, `random_2x2x2x2`, and `random_4x4x4x4`. Add a private prepared-metadata regression that constructs a large lattice without field payload and proves auxiliary metadata remains constant-size; use behavioral parity instead of inspecting production source strings.
 
 - [ ] **Step 2: Verify red**
 
@@ -129,7 +129,7 @@ Expected: FAIL because observables still extracts links per site.
 
 - [ ] **Step 3: Implement preparation and leaf kernels**
 
-Create crate-private `PreparedGaugeField<'a>` containing lattice, `nv`, `[&'a [Complex64];4]`, and plus/minus neighbor tables. Its constructor runs `require_su3`, checked arithmetic, shape/host validation, and borrows each direction once. Move plaquette, staple, action, directional derivative, dense gradient, and TA-force arithmetic behind this prepared record; retain fixed `Mat3` stencils with an `INVARIANT` comment explaining periodic SU(3) parity.
+Create crate-private `PreparedGaugeField<'a>` containing lattice, `[&'a [Complex64];4]`, and four column-major site strides. Its constructor runs `require_su3`, checked arithmetic, shape/host validation, and borrows each direction once. Compute periodic plus/minus neighbors with O(1) coordinate and wrap arithmetic so metadata does not scale with `nv`. Move plaquette, staple, action, directional derivative, dense gradient, and TA-force arithmetic behind this prepared record; retain fixed `Mat3` stencils with an `INVARIANT` comment explaining the checked periodic arithmetic.
 
 - [ ] **Step 4: Route direct APIs through the shared kernels**
 

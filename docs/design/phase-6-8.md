@@ -62,7 +62,7 @@ corrected before graph integration.
 | `GaugeLinkTensor` stores erased `Tensor` | Wrong internal boundary | Store `TypedTensor<Complex64>` and validate rank/shape in the wrapper |
 | `GaugeForce` is `[Tensor; 4]` | Too erased and duplicates the future momentum type | Replace/unify with `TaGaugeField` backed by `[TypedTensor<f64>; 4]` |
 | observables repeatedly call `load_link` | Repeats host-slice access in the site loop | Validate and borrow each direction once, then call a shared slice kernel |
-| force borrows slices and precomputes neighbors | Correct | Retain and route through prepared lattice metadata |
+| force borrows slices and computes periodic neighbors | Correct | Retain with constant-size prepared lattice metadata |
 | explicit unrolled `Mat3` arithmetic | Appropriate fixed-size SU(3) leaf | Retain; document the fixed-size and Julia-parity rationale |
 | periodic action/force stencils | No matching tenferro gather/stencil primitive | Retain as custom host kernels; avoid materialized lattice shifts |
 | NPY fixture reader and site indexing | Domain/fixture responsibility | Retain |
@@ -175,9 +175,15 @@ Both use this pipeline:
 3. the direct wrapper returns domain types;
 4. `HostReference` wraps typed results into erased `Tensor` variants.
 
-Prepared metadata contains lattice shape, checked site count, precomputed
-neighbor tables when profitable, and validated component strides. Hot loops
-borrow storage once. Validation precedes zero-size shortcuts and allocations.
+Prepared metadata contains lattice shape, checked site count, and four validated
+column-major site strides. Periodic neighbors use O(1) wrap arithmetic, so
+auxiliary metadata remains O(1) rather than scaling with lattice volume. Hot
+loops borrow storage once. Validation precedes zero-size shortcuts and
+allocations.
+
+Architectural review rule: prepared gauge metadata must not contain per-site
+collections. Behavioral parity plus the large-lattice constant-size unit
+regression enforce this boundary; production source text is not a test API.
 
 Extension execution is intentionally host-reference in Phase 6. Receiving a
 backend/GPU tensor returns a typed placement error. Missing extension runtime
