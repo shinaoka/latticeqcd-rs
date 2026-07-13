@@ -54,8 +54,20 @@ pub enum GaugeError {
     Npy { mu: usize, detail: String },
     #[error("tenferro tensor construction failed: {0}")]
     Tensor(String),
+    #[error("{operation} requires host placement: {source}")]
+    Placement {
+        operation: &'static str,
+        #[source]
+        source: tenferro_tensor::Error,
+    },
     #[error("beta must be finite, found {found}")]
     NonFiniteBeta { found: f64 },
     #[error("tenferro graph construction failed: {0}")]
     Graph(#[source] tenferro_runtime::Error),
+}
+
+impl GaugeError {
+    pub(crate) fn placement(operation: &'static str, source: tenferro_tensor::Error) -> Self {
+        Self::Placement { operation, source }
+    }
 }

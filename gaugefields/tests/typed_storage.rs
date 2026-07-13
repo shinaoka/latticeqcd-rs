@@ -1,6 +1,10 @@
 use gaugefields::{GaugeError, GaugeLinkTensor, LatticeShape4, TaGaugeField};
 use num_complex::Complex64;
-use tenferro_tensor::{Tensor, TypedTensor};
+use std::sync::Arc;
+use tenferro_tensor::{
+    Buffer, BufferHandle, DeviceId, DeviceKind, GpuBackendKind, MemoryKind, Placement, Tensor,
+    TypedTensor,
+};
 
 #[test]
 fn typed_storage_has_the_phase_6_public_boundary() {
@@ -10,6 +14,41 @@ fn typed_storage_has_the_phase_6_public_boundary() {
         GaugeLinkTensor::try_from_tensor;
     let _: fn([TypedTensor<f64>; 4], LatticeShape4) -> Result<TaGaugeField, GaugeError> =
         TaGaugeField::new;
+}
+
+#[test]
+fn host_only_typed_constructors_return_structured_placement_errors() {
+    let lattice = LatticeShape4::new([1, 1, 1, 1]).unwrap();
+    let placement = Placement {
+        memory_kind: MemoryKind::Device,
+        device: Some(DeviceId {
+            kind: DeviceKind::Gpu(GpuBackendKind::Cuda),
+            ordinal: 0,
+        }),
+    };
+    let link = TypedTensor::from_buffer_col_major(
+        vec![3, 3, 1, 1, 1, 1],
+        Buffer::Backend(Arc::new(BufferHandle::<Complex64>::new_with_len(1, 9))),
+        placement.clone(),
+    )
+    .unwrap();
+    assert!(matches!(
+        GaugeLinkTensor::from_typed(link, lattice),
+        Err(GaugeError::Placement { .. })
+    ));
+
+    let ta = || {
+        TypedTensor::from_buffer_col_major(
+            vec![8, 1, 1, 1, 1],
+            Buffer::Backend(Arc::new(BufferHandle::<f64>::new_with_len(2, 8))),
+            placement.clone(),
+        )
+        .unwrap()
+    };
+    assert!(matches!(
+        TaGaugeField::new([ta(), ta(), ta(), ta()], lattice),
+        Err(GaugeError::Placement { .. })
+    ));
 }
 
 #[test]

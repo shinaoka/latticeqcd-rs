@@ -19,7 +19,7 @@ impl<'a> PreparedGaugeField<'a> {
         let host = |link: &'a crate::GaugeLinkTensor| {
             link.typed()
                 .host_data()
-                .map_err(|source| GaugeError::Tensor(source.to_string()))
+                .map_err(|source| GaugeError::placement("PreparedGaugeField::new", source))
         };
         let links = [host(u0)?, host(u1)?, host(u2)?, host(u3)?];
         Self::from_parts(lattice, links)
@@ -56,7 +56,7 @@ impl<'a> PreparedGaugeField<'a> {
         let host = |tensor: &'a tenferro_tensor::TypedTensor<Complex64>| {
             tensor
                 .host_data()
-                .map_err(|source| GaugeError::Tensor(source.to_string()))
+                .map_err(|source| GaugeError::placement("PreparedGaugeField::from_tensors", source))
         };
         Self::from_parts(lattice, [host(u0)?, host(u1)?, host(u2)?, host(u3)?])
     }

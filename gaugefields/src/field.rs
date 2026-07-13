@@ -76,7 +76,7 @@ impl GaugeLinkTensor {
         }
         tensor
             .host_data()
-            .map_err(|source| GaugeError::Tensor(source.to_string()))?;
+            .map_err(|source| GaugeError::placement("GaugeLinkTensor::from_typed", source))?;
         Ok(Self {
             tensor,
             lattice,
@@ -168,7 +168,7 @@ impl TaGaugeField {
             }
             tensor
                 .host_data()
-                .map_err(|source| GaugeError::Tensor(source.to_string()))?;
+                .map_err(|source| GaugeError::placement("TaGaugeField::new", source))?;
         }
         Ok(Self { tensors, lattice })
     }
