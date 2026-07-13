@@ -67,6 +67,8 @@ pub enum GaugeError {
         operation: &'static str,
         component: usize,
     },
+    #[error("SU(3) normalization is singular at row {row}")]
+    SingularSu3Normalization { row: usize },
     #[error("tenferro graph construction failed: {0}")]
     Graph(#[source] tenferro_runtime::Error),
 }

@@ -102,3 +102,53 @@ pub fn exp_ta(t: f64, coeffs: &[f64; 8]) -> Result<Mat3, GaugeError> {
     }
     Ok(out)
 }
+
+/// Project a finite nonsingular matrix to SU(3) using Julia row completion.
+pub fn normalize_su3(matrix: &mut Mat3) -> Result<(), GaugeError> {
+    if let Some(component) = matrix
+        .as_array()
+        .iter()
+        .position(|value| !value.re.is_finite() || !value.im.is_finite())
+    {
+        return Err(GaugeError::NonFiniteSu3Input {
+            operation: "normalize_su3",
+            component,
+        });
+    }
+    let mut row0 = [matrix[(0, 0)], matrix[(0, 1)], matrix[(0, 2)]];
+    let mut row1 = [matrix[(1, 0)], matrix[(1, 1)], matrix[(1, 2)]];
+    let norm0 = row0.iter().map(|value| value.norm_sqr()).sum::<f64>();
+    if !norm0.is_finite() || norm0 <= 1e-30 {
+        return Err(GaugeError::SingularSu3Normalization { row: 0 });
+    }
+    let projection = row1
+        .iter()
+        .zip(row0)
+        .map(|(second, first)| *second * first.conj())
+        .sum::<C>()
+        / norm0;
+    for (second, first) in row1.iter_mut().zip(row0) {
+        *second -= projection * first;
+    }
+    let norm1 = row1.iter().map(|value| value.norm_sqr()).sum::<f64>();
+    if !norm1.is_finite() || norm1 <= 1e-30 {
+        return Err(GaugeError::SingularSu3Normalization { row: 1 });
+    }
+    let inv0 = norm0.sqrt().recip();
+    let inv1 = norm1.sqrt().recip();
+    row0.iter_mut().for_each(|value| *value *= inv0);
+    row1.iter_mut().for_each(|value| *value *= inv1);
+    let row2 = [
+        (row0[1] * row1[2] - row0[2] * row1[1]).conj(),
+        (row0[2] * row1[0] - row0[0] * row1[2]).conj(),
+        (row0[0] * row1[1] - row0[1] * row1[0]).conj(),
+    ];
+    let mut projected = Mat3::zero();
+    for column in 0..3 {
+        projected[(0, column)] = row0[column];
+        projected[(1, column)] = row1[column];
+        projected[(2, column)] = row2[column];
+    }
+    *matrix = projected;
+    Ok(())
+}

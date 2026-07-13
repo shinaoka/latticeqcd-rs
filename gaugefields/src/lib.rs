@@ -16,7 +16,7 @@ mod observables;
 #[cfg(feature = "autodiff")]
 pub use ad::ad_rules;
 pub use error::GaugeError;
-pub use evolution::exp_ta;
+pub use evolution::{exp_ta, normalize_su3};
 pub use extension::{register_runtime, wilson_action_traced};
 pub use field::{
     cold_su3, require_su3, Boundary, GaugeLinkTensor, GaugeLinks, LatticeShape4, TaGaugeField,
