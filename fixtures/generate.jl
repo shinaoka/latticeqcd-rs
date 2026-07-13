@@ -96,7 +96,47 @@ function generate(name, lattice, condition; reproducible=false, write_shifts=fal
     end
 end
 
+function generate_exp_ta()
+    out = joinpath(@__DIR__, "exp_ta")
+    mkpath(out)
+    cases = [
+        (name="zero", coefficients=zeros(8), t=0.75, branch="zero"),
+        (name="random_a", coefficients=[0.31, -0.27, 0.19, 0.41, -0.13, 0.23, -0.37, 0.29], t=0.7, branch="analytic"),
+        (name="random_b", coefficients=[-0.17, 0.43, -0.11, 0.07, 0.33, -0.39, 0.21, -0.25], t=-0.45, branch="analytic"),
+        (name="exact_degenerate", coefficients=[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], t=0.5, branch="fallback"),
+        (name="near_below", coefficients=[0.0, 0.0, 1.0, 1e-13, 0.0, 0.0, 0.0, 0.0], t=0.5, branch="fallback"),
+        (name="near_above", coefficients=[0.0, 0.0, 1.0, 1e-11, 0.0, 0.0, 0.0, 0.0], t=0.5, branch="analytic"),
+    ]
+    links = Initialize_Gaugefields(NC, 0, 1, 1, 1, 1; condition="cold")
+    momentum = initialize_TA_Gaugefields(links)[1]
+    result = similar(links[1])
+    temps = [similar(links[1]), similar(links[1])]
+    expected = Array{ComplexF64}(undef, 3, 3, length(cases))
+    for (index, case) in enumerate(cases)
+        momentum.a[:, 1, 1, 1, 1] .= case.coefficients
+        exptU!(result, case.t, momentum, temps)
+        expected[:, :, index] .= result.U[:, :, 1, 1, 1, 1]
+    end
+    NPZ.npzwrite(joinpath(out, "expected.npy"), expected)
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n  \"gaugefields_jl_commit\": \"$COMMIT\",\n")
+        print(io, "  \"gaugefields_jl_version\": \"$VERSION\",\n")
+        print(io, "  \"source_function\": \"exptU!\",\n")
+        print(io, "  \"source_file\": \"src/4D/TA_gaugefields_4D_serial.jl\",\n")
+        print(io, "  \"fallback_predicate\": \"nrm2_k < 1e-24\",\n")
+        print(io, "  \"cases\": [\n")
+        for (index, case) in enumerate(cases)
+            index > 1 && print(io, ",\n")
+            print(io, "    {\"name\": \"$(case.name)\", \"coefficients\": [")
+            print(io, join(repr.(case.coefficients), ", "))
+            print(io, "], \"t\": $(repr(case.t)), \"branch\": \"$(case.branch)\"}")
+        end
+        print(io, "\n  ]\n}\n")
+    end
+end
+
 generate("cold_1x1x1x1", (1, 1, 1, 1), "cold")
 generate("random_2x2x2x2", (2, 2, 2, 2), "hot"; reproducible=true, write_observables=true)
 generate("random_4x4x4x4", (4, 4, 4, 4), "hot"; reproducible=true, write_observables=true)
 generate("shifts_3x2x4x5", (3, 2, 4, 5), "hot"; reproducible=true, write_shifts=true)
+generate_exp_ta()
