@@ -39,7 +39,7 @@ fn field(case: usize, sign: f64, h: f64) -> GaugeLinks {
             }
         }
         links.push(
-            GaugeLinkTensor::new(
+            GaugeLinkTensor::try_from_tensor(
                 Tensor::from_vec_col_major(vec![3, 3, 2, 2, 1, 1], d).unwrap(),
                 l,
             )
@@ -71,7 +71,7 @@ fn dense_gradient_matches_second_order_central_difference() {
             .into_iter()
             .map(|(mu, site)| {
                 Mat3::load(
-                    grad[mu].tensor().as_slice::<C>().unwrap(),
+                    grad[mu].typed().host_data().unwrap(),
                     site.checked_mul(9).unwrap(),
                 )
                 .unwrap()

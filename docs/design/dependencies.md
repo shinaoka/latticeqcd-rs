@@ -1,7 +1,7 @@
 # Dependency policy
 
 All direct tenferro crates are pinned to exact `tenferro-rs` revision
-`f504ba0a8668baca89ab1d4348b9475ff85377b4`. The pin is repeated for the
+`51bc0a7bef274e20d08fc054856cb4d74c284cbe`. The pin is repeated for the
 tensor, runtime, CPU, and optional AD crates so neither default nor `autodiff`
 builds follow a moving branch.
 
@@ -12,21 +12,14 @@ on `computegraph` at exact revision
 used by the pinned tenferro revision, so the direct compile-spike APIs and
 tenferro's dependency graph remain compatible.
 
-The default feature set is deliberately minimal. The `autodiff` feature only
-links the pinned `tenferro-ad`, `computegraph`, and `tidu` APIs; it does not
-promise traced gauge kernels.
-Its compile spike implements `tenferro_runtime::extension::ExtensionOp`, calls
-`extension::apply`, implements `ExtensionLinearizeRule`, registers it through
-`ExtensionRuleSet::with_linearize`, and attaches that set with
-`AdContextBuilder::with_extension_rules`. The identity carrier is deliberately
-non-executable: it validates the Phase 0 extension and AD registration surface,
-not a Phase 6 gauge operation.
+The default feature set is deliberately minimal. Phase 6 traced Wilson action
+uses the pinned runtime extension ABI in every build. The `autodiff` feature
+currently reserves the pinned `tenferro-ad`, `computegraph`, and `tidu` compile
+boundary for Phase 7; it does not expose gauge autodiff rules yet.
 
-`tenferro-runtime` and `tenferro-cpu` are development dependencies used by the
-dependency smoke test, not production dependencies. Consequently a normal
-no-default-features dependency graph contains `tenferro-tensor` but excludes
-the runtime, CPU backend, and faer graph. The nondefault `autodiff` feature
-enables tenferro-ad's required `cpu-faer` backend transitively.
+`tenferro-runtime` and `tenferro-cpu` are direct dependencies because the public
+registration closure and checked CPU example use their APIs. The nondefault
+`autodiff` feature additionally enables tenferro-ad and its `cpu-faer` graph.
 
 Future accelerator work reserves two backend-specific feature names: `cuda`
 and `rocm`. Neither feature is implemented or declared in the manifest today.

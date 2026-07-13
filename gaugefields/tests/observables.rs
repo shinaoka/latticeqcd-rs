@@ -2,7 +2,6 @@ use gaugefields::{
     cold_su3, load_fixture, measurement_staple, normalized_plaquette, plaquette_sum, wilson_action,
     GaugeError, LatticeShape4, Mat3,
 };
-use num_complex::Complex64;
 use std::path::Path;
 
 #[test]
@@ -26,7 +25,7 @@ fn direct_sum_equals_measurement_staple_contraction() {
     let mut sum = 0.0;
     for mu in 0..4 {
         let v = measurement_staple(u, mu).unwrap();
-        let data = v.tensor().as_slice::<Complex64>().unwrap();
+        let data = v.typed().host_data().unwrap();
         for site in 0..l.nv() {
             sum += gaugefields::load_link(u, mu, site)
                 .unwrap()

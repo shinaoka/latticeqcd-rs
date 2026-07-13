@@ -44,10 +44,7 @@ fn valid_fixture_roundtrips_exact_values() {
     write_valid(&dir);
     let fixture = load_fixture(&dir).unwrap();
     assert_eq!(
-        fixture.links().links()[2]
-            .tensor()
-            .as_slice::<Complex64>()
-            .unwrap()[7],
+        fixture.links().links()[2].typed().host_data().unwrap()[7],
         Complex64::new(7.0, -1.0)
     );
     assert_eq!(fixture.metadata().nc, 3);
@@ -121,10 +118,7 @@ fn checked_julia_cold_fixture_loads_with_exact_provenance() {
         fixture.metadata().expected_observables["plaquette_sum"].as_f64(),
         Some(18.0)
     );
-    let values = fixture.links().links()[0]
-        .tensor()
-        .as_slice::<Complex64>()
-        .unwrap();
+    let values = fixture.links().links()[0].typed().host_data().unwrap();
     assert_eq!(values[0], Complex64::new(1.0, 0.0));
     assert_eq!(values[4], Complex64::new(1.0, 0.0));
     assert_eq!(values[8], Complex64::new(1.0, 0.0));
@@ -166,7 +160,7 @@ fn checked_julia_random_fixture_preserves_every_mu_axis_and_value() {
     assert!(sum.is_finite());
     assert_eq!(reference.len(), 4);
     for (mu, link) in fixture.links().links().iter().enumerate() {
-        let actual = link.tensor().as_slice::<Complex64>().unwrap();
+        let actual = link.typed().host_data().unwrap();
         assert_eq!(actual.len(), 3 * 3 * 2 * 2 * 2 * 2);
         for (index, (&value, pair)) in actual.iter().zip(&reference[mu]).enumerate() {
             assert_eq!(
@@ -178,13 +172,7 @@ fn checked_julia_random_fixture_preserves_every_mu_axis_and_value() {
     }
     let last_site_first_component = 9 * 15;
     assert_ne!(
-        fixture.links().links()[0]
-            .tensor()
-            .as_slice::<Complex64>()
-            .unwrap()[last_site_first_component],
-        fixture.links().links()[3]
-            .tensor()
-            .as_slice::<Complex64>()
-            .unwrap()[last_site_first_component]
+        fixture.links().links()[0].typed().host_data().unwrap()[last_site_first_component],
+        fixture.links().links()[3].typed().host_data().unwrap()[last_site_first_component]
     );
 }

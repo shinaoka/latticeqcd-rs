@@ -1,6 +1,7 @@
 # Gauge-field layout and fixture contract
 
-Each directed link is one compact, column-major tenferro C64 tensor of rank six
+Each directed link owns one compact, column-major
+`TypedTensor<Complex64>` of rank six
 with shape `[NC, NC, NX, NY, NZ, NT]`. A gauge field contains four independent
 tensors, one for each `mu = 0,1,2,3`; direction is not another tensor axis.
 
@@ -34,6 +35,12 @@ allocate tensor-roll buffers and do not expose Gaugefields.jl's mutable shared
 `Ushifted` scratch buffer. The checked `shifts_3x2x4x5` fixture materializes
 that Julia reference only as an oracle (`gaugefields_4D_nowing.jl:380-454`);
 Rust parity is evaluated through `neighbor_site` reads.
+
+Direct kernels validate once through `PreparedGaugeField`, borrow each of the
+four host slices once, and precompute checked plus/minus neighbor tables. The
+periodic action, measurement staple, dense gradient, and TA force share these
+site-local `Mat3` leaves. Dtype-erased `Tensor` values occur only at fixture and
+extension ABI boundaries; `TracedTensor` is graph metadata rather than storage.
 
 Regenerate all checked fixtures portably from a clean shell with
 `GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia fixtures/generate.jl`.

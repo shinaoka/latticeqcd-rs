@@ -62,41 +62,38 @@ fn julia_derivative_payloads_are_linear_in_beta() {
         let actual_force = gauge_force(f.links(), scale * beta).unwrap();
         for mu in 0..4 {
             assert_scaled_c64(
-                actual_dsdu[mu].tensor().as_slice::<Complex64>().unwrap(),
-                base_dsdu[mu].tensor().as_slice::<Complex64>().unwrap(),
+                actual_dsdu[mu].typed().host_data().unwrap(),
+                base_dsdu[mu].typed().host_data().unwrap(),
                 scale,
                 &format!("dsdu scale={scale} mu={mu}"),
             );
             assert_scaled_c64(
-                actual_gradient[mu]
-                    .tensor()
-                    .as_slice::<Complex64>()
-                    .unwrap(),
-                base_gradient[mu].tensor().as_slice::<Complex64>().unwrap(),
+                actual_gradient[mu].typed().host_data().unwrap(),
+                base_gradient[mu].typed().host_data().unwrap(),
                 scale,
                 &format!("gradient scale={scale} mu={mu}"),
             );
             assert_scaled_f64(
-                actual_force.tensors()[mu].as_slice::<f64>().unwrap(),
-                base_force.tensors()[mu].as_slice::<f64>().unwrap(),
+                actual_force.tensors()[mu].host_data().unwrap(),
+                base_force.tensors()[mu].host_data().unwrap(),
                 scale,
                 &format!("gauge_force scale={scale} mu={mu}"),
             );
             if scale == 0.0 {
                 assert!(actual_dsdu[mu]
-                    .tensor()
-                    .as_slice::<Complex64>()
+                    .typed()
+                    .host_data()
                     .unwrap()
                     .iter()
                     .all(|value| *value == Complex64::new(0.0, 0.0)));
                 assert!(actual_gradient[mu]
-                    .tensor()
-                    .as_slice::<Complex64>()
+                    .typed()
+                    .host_data()
                     .unwrap()
                     .iter()
                     .all(|value| *value == Complex64::new(0.0, 0.0)));
                 assert!(actual_force.tensors()[mu]
-                    .as_slice::<f64>()
+                    .host_data()
                     .unwrap()
                     .iter()
                     .all(|value| *value == 0.0));
@@ -115,7 +112,7 @@ fn julia_momentum_update_coefficient_matches_p_update() {
     let mut saw_nonzero_input = false;
     let mut saw_nonzero_update = false;
     for (mu, tensor) in force.tensors().iter().enumerate() {
-        let components = tensor.as_slice::<f64>().unwrap();
+        let components = tensor.host_data().unwrap();
         let bytes = fs::read(fixture_dir().join(format!("momentum_delta{mu}.npy"))).unwrap();
         let npy = npyz::NpyFile::new(&bytes[..]).unwrap();
         assert_eq!(npy.order(), npyz::Order::Fortran);

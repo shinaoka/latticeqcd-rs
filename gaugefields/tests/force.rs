@@ -16,12 +16,7 @@ fn cold_force_quantities_have_expected_shapes_and_values() {
     let u = cold_su3(l).unwrap();
     let d = dsdu(&u, 6.0).unwrap();
     for link in &d {
-        for block in link
-            .tensor()
-            .as_slice::<Complex64>()
-            .unwrap()
-            .chunks_exact(9)
-        {
+        for block in link.typed().host_data().unwrap().chunks_exact(9) {
             for j in 0..3 {
                 for i in 0..3 {
                     assert!(
@@ -36,10 +31,10 @@ fn cold_force_quantities_have_expected_shapes_and_values() {
     let f = gauge_force(&u, 6.0).unwrap();
     for t in f.tensors() {
         assert_eq!(t.shape(), &[8, 2, 2, 2, 2]);
-        assert!(t.as_slice::<f64>().unwrap().iter().all(|x| x.abs() < 1e-12));
+        assert!(t.host_data().unwrap().iter().all(|x| x.abs() < 1e-12));
     }
     let g = action_gradient(&u, 6.0).unwrap();
-    assert_eq!(g[0].tensor().shape(), &[3, 3, 2, 2, 2, 2]);
+    assert_eq!(g[0].typed().shape(), &[3, 3, 2, 2, 2, 2]);
 }
 
 #[test]
@@ -50,7 +45,7 @@ fn nonzero_force_coefficients_match_independent_local_ta_formula() {
     .unwrap();
     let d = dsdu(f.links(), f.metadata().beta).unwrap();
     let force = gauge_force(f.links(), f.metadata().beta).unwrap();
-    let dsdu0 = gaugefields::Mat3::load(d[0].tensor().as_slice::<Complex64>().unwrap(), 0).unwrap();
+    let dsdu0 = gaugefields::Mat3::load(d[0].typed().host_data().unwrap(), 0).unwrap();
     let a = gaugefields::load_link(f.links(), 0, 0)
         .unwrap()
         .mul(dsdu0)
@@ -65,7 +60,7 @@ fn nonzero_force_coefficients_match_independent_local_ta_formula() {
         a[(1, 2)].re - a[(2, 1)].re,
         (a[(0, 0)].im + a[(1, 1)].im - 2.0 * a[(2, 2)].im) / 3f64.sqrt(),
     ];
-    let actual = &force.tensors()[0].as_slice::<f64>().unwrap()[..8];
+    let actual = &force.tensors()[0].host_data().unwrap()[..8];
     assert!(expected.iter().any(|x| x.abs() > 1e-8));
     for i in 0..8 {
         assert!(
