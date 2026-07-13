@@ -69,6 +69,12 @@ pub enum GaugeError {
     },
     #[error("SU(3) normalization is singular at row {row}")]
     SingularSu3Normalization { row: usize },
+    #[error("{operation} failed in tenferro evolution: {source}")]
+    Evolution {
+        operation: &'static str,
+        #[source]
+        source: tenferro_tensor::Error,
+    },
     #[error("tenferro graph construction failed: {0}")]
     Graph(#[source] tenferro_runtime::Error),
 }

@@ -1,5 +1,17 @@
-use crate::{GaugeError, Mat3};
+use crate::{GaugeError, GaugeLinkTensor, GaugeLinks, Mat3, TaGaugeField};
 use num_complex::Complex64 as C;
+use std::fmt;
+use tenferro_cpu::CpuBackend;
+use tenferro_tensor::{
+    BackendRuntimeCache, BackendSessionHost, CacheStats, DotGeneralConfig, RuntimeCacheControl,
+    SessionCachedDot, Tensor, TypedTensor,
+};
+
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(test)]
+static FAIL_DIRECTION: AtomicUsize = AtomicUsize::new(usize::MAX);
 
 fn taylor_four(v: Mat3) -> Mat3 {
     let v2 = v.mul(v);
@@ -152,3 +164,152 @@ pub fn normalize_su3(matrix: &mut Mat3) -> Result<(), GaugeError> {
     *matrix = projected;
     Ok(())
 }
+
+/// Reusable CPU backend and bounded analysis cache for link evolution.
+pub struct CpuEvolutionContext {
+    backend: CpuBackend,
+    cache: <CpuBackend as BackendRuntimeCache>::RuntimeCache,
+}
+
+impl CpuEvolutionContext {
+    /// Construct an evolution owner around an application-supplied CPU backend.
+    pub fn new(backend: CpuBackend) -> Self {
+        Self {
+            backend,
+            cache: Default::default(),
+        }
+    }
+
+    /// Read the owned backend configuration.
+    pub fn backend(&self) -> &CpuBackend {
+        &self.backend
+    }
+
+    /// Drop all retained contraction analyses.
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Snapshot retained contraction analysis entries and bytes.
+    pub fn cache_stats(&self) -> CacheStats {
+        self.cache.stats()
+    }
+}
+
+impl fmt::Debug for CpuEvolutionContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CpuEvolutionContext")
+            .field("backend", &self.backend)
+            .field("cache_stats", &self.cache.stats())
+            .finish()
+    }
+}
+
+fn evolution_error(operation: &'static str, source: tenferro_tensor::Error) -> GaugeError {
+    GaugeError::Evolution { operation, source }
+}
+
+/// Apply `U_mu <- exp(t P_mu) U_mu` through four cached batched contractions.
+pub fn exp_ta_update(
+    context: &mut CpuEvolutionContext,
+    links: &mut GaugeLinks,
+    t: f64,
+    momentum: &TaGaugeField,
+) -> Result<(), GaugeError> {
+    if links.lattice() != momentum.lattice() {
+        return Err(GaugeError::Shape {
+            expected: links.lattice().extents().to_vec(),
+            found: momentum.lattice().extents().to_vec(),
+        });
+    }
+    if !t.is_finite() {
+        return Err(GaugeError::NonFiniteSu3Input {
+            operation: "exp_ta_update",
+            component: 8,
+        });
+    }
+    if t == 0.0 {
+        return Ok(());
+    }
+    let lattice = links.lattice();
+    let [nx, ny, nz, nt] = lattice.extents();
+    let count = lattice
+        .nv()
+        .checked_mul(9)
+        .ok_or(GaugeError::AllocationOverflow)?;
+    let mut exponentials = Vec::with_capacity(4);
+    for mu in 0..4 {
+        let coefficients = momentum.tensors()[mu]
+            .host_data()
+            .map_err(|source| GaugeError::placement("exp_ta_update", source))?;
+        let mut data = Vec::with_capacity(count);
+        for site in 0..lattice.nv() {
+            // INVARIANT: validated `[8,nx,ny,nz,nt]` compact storage makes each
+            // site one contiguous coefficient block; only fixed Mat3 work occurs here.
+            let offset = site.checked_mul(8).ok_or(GaugeError::AllocationOverflow)?;
+            let coeffs: &[f64; 8] = coefficients
+                .get(offset..offset + 8)
+                .ok_or(GaugeError::AllocationOverflow)?
+                .try_into()
+                .map_err(|_| GaugeError::AllocationOverflow)?;
+            data.extend_from_slice(exp_ta(t, coeffs)?.as_array());
+        }
+        exponentials.push(Tensor::C64(
+            TypedTensor::from_vec_col_major(vec![3, 3, nx, ny, nz, nt], data)
+                .map_err(|source| evolution_error("exp_ta_update pack", source))?,
+        ));
+    }
+    let rhs: [Tensor; 4] = std::array::from_fn(|mu| Tensor::C64(links.links()[mu].typed().clone()));
+    let config = DotGeneralConfig {
+        lhs_contracting_dims: vec![1],
+        rhs_contracting_dims: vec![0],
+        lhs_batch_dims: vec![2, 3, 4, 5],
+        rhs_batch_dims: vec![2, 3, 4, 5],
+    };
+    let outputs = context
+        .backend
+        .with_backend_session_cached(
+            &mut context.cache,
+            |session| -> tenferro_tensor::Result<Vec<Tensor>> {
+                (0..4)
+                    .map(|mu| {
+                        #[cfg(test)]
+                        if FAIL_DIRECTION.load(Ordering::Relaxed) == mu {
+                            return Err(tenferro_tensor::Error::backend_failure(
+                                "exp_ta_update test injection",
+                                format!("direction {mu}"),
+                            ));
+                        }
+                        SessionCachedDot::dot_general_cached(
+                            session,
+                            Some(mu),
+                            &exponentials[mu],
+                            &rhs[mu],
+                            &config,
+                        )
+                    })
+                    .collect()
+            },
+        )
+        .map_err(|source| evolution_error("exp_ta_update dot_general", source))?;
+    let mut replacements = Vec::with_capacity(4);
+    for output in outputs {
+        let typed = match output {
+            Tensor::C64(typed) => typed,
+            other => {
+                return Err(GaugeError::DType {
+                    found: format!("{:?}", other.dtype()),
+                })
+            }
+        };
+        replacements.push(GaugeLinkTensor::from_typed(typed, lattice)?);
+    }
+    let replacements: [GaugeLinkTensor; 4] = replacements
+        .try_into()
+        .map_err(|_| GaugeError::Tensor("evolution produced four links".into()))?;
+    *links = GaugeLinks::new(replacements)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;
