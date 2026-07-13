@@ -1,6 +1,7 @@
 use super::*;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
+use std::path::Path;
 use tenferro_runtime::extension::ExtensionOp;
 use tenferro_runtime::{DType, SymDim};
 use tenferro_tensor::{Tensor, TypedTensor};
@@ -211,4 +212,151 @@ fn host_reference_rejects_exact_link_shape_mismatch_without_panicking() {
     assert!(result.is_ok(), "host-reference validation panicked");
     let error = result.unwrap().unwrap_err().to_string();
     assert!(error.contains("different lattice shape"), "{error}");
+}
+
+fn random_fixture_links() -> crate::GaugeLinks {
+    let fixture = crate::load_fixture(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2"),
+    )
+    .unwrap();
+    let lattice = fixture.links().lattice();
+    crate::GaugeLinks::new(std::array::from_fn(|mu| {
+        crate::GaugeLinkTensor::from_typed(fixture.links().links()[mu].typed().clone(), lattice)
+            .unwrap()
+    }))
+    .unwrap()
+}
+
+fn tangent(mu: usize, len: usize) -> Vec<Complex64> {
+    (0..len)
+        .map(|i| {
+            Complex64::new(
+                (1 + i + 3 * mu) as f64 / 211.0,
+                -((2 + 2 * i + mu) as f64) / 307.0,
+            )
+        })
+        .collect()
+}
+
+fn perturbed_links(
+    base: &crate::GaugeLinks,
+    active_dirs: &[usize],
+    tangents: &[Vec<Complex64>],
+    scale: f64,
+) -> crate::GaugeLinks {
+    let links = std::array::from_fn(|mu| {
+        let mut data = base.links()[mu].typed().host_data().unwrap().to_vec();
+        if let Some(index) = active_dirs.iter().position(|&active| active == mu) {
+            for (value, delta) in data.iter_mut().zip(&tangents[index]) {
+                *value += scale * delta;
+            }
+        }
+        crate::GaugeLinkTensor::from_typed(
+            TypedTensor::from_vec_col_major(base.links()[mu].typed().shape().to_vec(), data)
+                .unwrap(),
+            base.lattice(),
+        )
+        .unwrap()
+    });
+    crate::GaugeLinks::new(links).unwrap()
+}
+
+#[test]
+fn random_fixture_jvp_matches_finite_difference_and_direct_gradient() {
+    let base = random_fixture_links();
+    let beta = 5.7;
+    let active_dirs = [0, 2];
+    let tangents = active_dirs
+        .iter()
+        .map(|&mu| tangent(mu, 9 * base.lattice().nv()))
+        .collect::<Vec<_>>();
+    let erased: [Tensor; 4] =
+        std::array::from_fn(|mu| Tensor::C64(base.links()[mu].typed().clone()));
+    let tangent_tensors = tangents
+        .iter()
+        .map(|values| {
+            Tensor::C64(
+                TypedTensor::from_vec_col_major(vec![3, 3, 2, 2, 2, 2], values.clone()).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let inputs = [
+        &erased[0],
+        &erased[1],
+        &erased[2],
+        &erased[3],
+        &tangent_tensors[0],
+        &tangent_tensors[1],
+    ];
+    let actual = WilsonActionJvpOp::new(beta, active_dirs.to_vec())
+        .unwrap()
+        .execute(&inputs)
+        .unwrap()[0]
+        .as_slice::<f64>()
+        .unwrap()[0];
+    let gradient = crate::action_gradient(&base, beta).unwrap();
+    let direct = active_dirs
+        .iter()
+        .enumerate()
+        .map(|(index, &mu)| {
+            gradient[mu]
+                .typed()
+                .host_data()
+                .unwrap()
+                .iter()
+                .zip(&tangents[index])
+                .map(|(g, delta)| (g.conj() * delta).re)
+                .sum::<f64>()
+        })
+        .sum::<f64>();
+    let h = 1e-6;
+    let finite_difference =
+        (crate::wilson_action(&perturbed_links(&base, &active_dirs, &tangents, h), beta).unwrap()
+            - crate::wilson_action(&perturbed_links(&base, &active_dirs, &tangents, -h), beta)
+                .unwrap())
+            / (2.0 * h);
+    assert!(
+        (actual - direct).abs() < 1e-11,
+        "actual={actual} direct={direct} residual={}",
+        (actual - direct).abs()
+    );
+    assert!(
+        (actual - finite_difference).abs() < 1e-7,
+        "actual={actual} finite_difference={finite_difference} residual={}",
+        (actual - finite_difference).abs()
+    );
+}
+
+#[test]
+fn random_fixture_force_callback_matches_seeded_direct_gradient() {
+    let base = random_fixture_links();
+    let beta = 5.7;
+    let gradient = crate::action_gradient(&base, beta).unwrap();
+    let erased: [Tensor; 4] =
+        std::array::from_fn(|mu| Tensor::C64(base.links()[mu].typed().clone()));
+    for seed in [1.0, -2.5, 0.25] {
+        let seed_tensor: Tensor = TypedTensor::from_vec_col_major(vec![], vec![seed])
+            .unwrap()
+            .into();
+        let outputs = WilsonForceOp::new(beta)
+            .unwrap()
+            .execute(&[&erased[0], &erased[1], &erased[2], &erased[3], &seed_tensor])
+            .unwrap();
+        for mu in 0..4 {
+            for (index, (actual, expected)) in outputs[mu]
+                .as_slice::<Complex64>()
+                .unwrap()
+                .iter()
+                .zip(gradient[mu].typed().host_data().unwrap())
+                .enumerate()
+            {
+                let residual = (*actual - seed * expected).norm();
+                assert!(
+                    residual < 1e-13,
+                    "seed={seed} mu={mu} index={index} actual={actual} expected={} residual={residual}",
+                    seed * expected
+                );
+            }
+        }
+    }
 }
