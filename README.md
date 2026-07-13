@@ -53,3 +53,36 @@ VJP or force AD rule, so differentiation through force is a typed unsupported
 operation. See `docs/design/ad-convention.md` for the complex convention and
 `cargo run -p gaugefields --example traced_wilson_action --all-features` for
 checked direct/traced action parity.
+
+## SU(3) evolution
+
+`exp_ta` reproduces Gaugefields.jl's fixed-size SU(3) Cardano algorithm and its
+fourth-order near-degenerate fallback. `normalize_su3` performs the matching
+NC=3 row projection and rejects non-finite or singular input transactionally.
+Finite inputs that overflow coefficient scaling, Cardano intermediates,
+fallback powers, or final assembly return the distinct typed
+`Su3NumericalRange` error; this phase does not silently clamp or add an
+alternative scaling-and-squaring algorithm.
+Field updates use an application-owned CPU context:
+
+```rust
+use gaugefields::{cold_su3, exp_ta_update, CpuEvolutionContext, LatticeShape4, TaGaugeField};
+use tenferro_cpu::CpuBackend;
+
+# fn update(momentum: &TaGaugeField) -> Result<(), gaugefields::GaugeError> {
+let mut links = cold_su3(LatticeShape4::new([4, 4, 4, 4])?)?;
+let mut evolution = CpuEvolutionContext::new(CpuBackend::new());
+exp_ta_update(&mut evolution, &mut links, 0.01, momentum)?;
+let stats = evolution.cache_stats();
+evolution.clear_cache();
+# let _ = stats;
+# Ok(())
+# }
+```
+
+The context reuses its backend, buffer pool, and bounded runtime cache. Stable
+slots `0..3` identify the four directions, and all outputs are validated before
+the links are replaced. Cache entry counts are provider-dependent: the pinned
+cpu-faer unconjugated strided path reports zero retained analysis entries even
+though it uses the same cached session and stable slots. No HMC sampler is
+public; HMC appears only as deterministic crate-private regression support.

@@ -1,0 +1,18 @@
+{
+  "gaugefields_jl_commit": "9e5719970770f4497405a856315c90bef7f74449",
+  "gaugefields_jl_version": "0.7.2",
+  "source_function": "exptU!",
+  "source_file": "src/4D/TA_gaugefields_4D_serial.jl",
+  "fallback_predicate": "nrm2_k < 1e-24",
+  "balanced_oracle": "pinned exp_T4 fallback or LinearAlgebra.exp after the generator convention; guards exptU! csum cancellation",
+  "cases": [
+    {"name": "zero", "coefficients": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "t": 0.75, "branch": "zero"},
+    {"name": "random_a", "coefficients": [0.31, -0.27, 0.19, 0.41, -0.13, 0.23, -0.37, 0.29], "t": 0.7, "branch": "analytic"},
+    {"name": "random_b", "coefficients": [-0.17, 0.43, -0.11, 0.07, 0.33, -0.39, 0.21, -0.25], "t": -0.45, "branch": "analytic"},
+    {"name": "balanced_pair", "coefficients": [1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "t": 1.0, "branch": "fallback"},
+    {"name": "balanced_octet", "coefficients": [0.4, -0.3, 0.2, -0.1, -0.2, 0.1, -0.4, 0.3], "t": 0.6, "branch": "analytic"},
+    {"name": "exact_degenerate", "coefficients": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], "t": 0.5, "branch": "fallback"},
+    {"name": "near_below", "coefficients": [0.0, 0.0, 1.0, 1.0e-13, 0.0, 0.0, 0.0, 0.0], "t": 0.5, "branch": "fallback"},
+    {"name": "near_above", "coefficients": [0.0, 0.0, 1.0, 1.0e-11, 0.0, 0.0, 0.0, 0.0], "t": 0.5, "branch": "analytic"}
+  ]
+}
