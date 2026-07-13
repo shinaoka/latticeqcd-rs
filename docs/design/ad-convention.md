@@ -22,15 +22,30 @@ The factor two is the conversion from Julia's `beta/2` doubled-orientation
 loop dataset to the six-plane physical action. The dagger is fixed by the
 Hermitian real inner product, not by an array-layout convention.
 
+Phase 7 applies this convention compositionally. Action linearization emits a
+JVP containing only tangent slots for active link directions. Its scalar is
+`Re sum_mu sum_i conj(G_mu[i]) delta_U_mu[i]`. Linear transpose consumes any
+finite real scalar cotangent `c` and returns `c G_mu` for active directions
+through the Wilson force extension. Applications explicitly attach `ad_rules()`
+to their own `AdContext` and separately attach `register_runtime` to their
+executor. There is no direct action VJP or force AD rule; higher-order
+differentiation through force is intentionally unsupported.
+
 Julia parity uses `1e-13` maximum component error because each component is a
 bounded sum of six fixed 3×3 `ComplexF64` products evaluated from the identical
 checked fixture; no long volume reduction is involved. Aggregate observables
 use `1e-12` relative error because their summation length grows with volume.
 Parity failures report the measured maximum or relative residual.
 
-Each force API precomputes bounded forward/backward neighbor tables and borrows
-the four compact input slices once. A shared site-local `Mat3` staple helper
-feeds exact-capacity final buffers: `dsdu` and `action_gradient` construct only
-their four final C64 tensors, while `gauge_force` writes coefficient tensors
-directly and never materializes a staple or `dsdu` field. This trades two
-`NV×4` index tables for removal of multiple full-volume complex intermediates.
+Each force API stores only four column-major site strides and borrows the four
+compact input slices once. Periodic neighbors use checked O(1) wrap arithmetic.
+A shared site-local `Mat3` staple helper feeds exact-capacity final buffers:
+`dsdu` and `action_gradient` construct only their four final C64 tensors, while
+`gauge_force` writes coefficient tensors directly and never materializes a
+staple, `dsdu` field, or volume-sized neighbor table.
+
+Independent unresolved graph placeholders still cannot express cross-input
+shape equality constraints; this is tracked by
+[tenferro-rs #1370](https://github.com/tensor4all/tenferro-rs/issues/1370).
+Known contradictions fail graph construction, while executor and host-reference
+validation enforce exact concrete equality.
