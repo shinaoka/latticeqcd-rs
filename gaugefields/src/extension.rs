@@ -23,7 +23,10 @@ fn invalid(op: &'static str, message: impl Into<String>) -> tenferro_tensor::Err
 }
 
 fn abi_error(op: &'static str, error: GaugeError) -> tenferro_tensor::Error {
-    invalid(op, error.to_string())
+    match error {
+        GaugeError::Placement { source, .. } => source,
+        domain => invalid(op, domain.to_string()),
+    }
 }
 
 fn checked_output_count(nv: usize) -> tenferro_tensor::Result<usize> {
@@ -280,18 +283,22 @@ impl HostReference for WilsonActionJvpOp {
             .map_err(|error| abi_error(WILSON_ACTION_JVP_FAMILY, error))?;
         let mut value = 0.0;
         for (index, &mu) in self.active_dirs.iter().enumerate() {
-            let tangent =
-                match inputs[4 + index] {
-                    Tensor::C64(tensor) if tensor.shape() == inputs[mu].shape() => tensor
-                        .host_data()
-                        .map_err(|error| invalid(WILSON_ACTION_JVP_FAMILY, error.to_string()))?,
-                    _ => {
-                        return Err(invalid(
+            let tangent = match inputs[4 + index] {
+                Tensor::C64(tensor) if tensor.shape() == inputs[mu].shape() => {
+                    tensor.host_data().map_err(|source| {
+                        abi_error(
                             WILSON_ACTION_JVP_FAMILY,
-                            format!("tangent for direction {mu} must be matching host C64"),
-                        ))
-                    }
-                };
+                            GaugeError::placement("WilsonActionJvpOp::execute", source),
+                        )
+                    })?
+                }
+                _ => {
+                    return Err(invalid(
+                        WILSON_ACTION_JVP_FAMILY,
+                        format!("tangent for direction {mu} must be matching host C64"),
+                    ))
+                }
+            };
             for site in 0..prepared.nv() {
                 let gradient = prepared
                     .force_staple(site, mu)
@@ -365,7 +372,13 @@ impl HostReference for WilsonForceOp {
             .map_err(|_| invalid(WILSON_FORCE_FAMILY, "expected four links"))?;
         let seed = match inputs[4] {
             Tensor::F64(tensor) if tensor.shape().is_empty() => tensor
-                .host_data()?
+                .host_data()
+                .map_err(|source| {
+                    abi_error(
+                        WILSON_FORCE_FAMILY,
+                        GaugeError::placement("WilsonForceOp::execute", source),
+                    )
+                })?
                 .first()
                 .copied()
                 .filter(|value| value.is_finite())

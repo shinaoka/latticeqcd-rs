@@ -4,7 +4,10 @@ use std::hash::Hasher;
 use std::path::Path;
 use tenferro_runtime::extension::ExtensionOp;
 use tenferro_runtime::{DType, SymDim};
-use tenferro_tensor::{Tensor, TypedTensor};
+use tenferro_tensor::{
+    Buffer, BufferHandle, DeviceId, DeviceKind, Error as TensorError, GpuBackendKind, MemoryKind,
+    Placement, Tensor, TypedTensor,
+};
 
 type InferredMeta = tenferro_tensor::Result<Vec<(DType, Vec<SymDim>)>>;
 
@@ -359,4 +362,100 @@ fn random_fixture_force_callback_matches_seeded_direct_gradient() {
             }
         }
     }
+}
+
+fn device_placement() -> Placement {
+    Placement {
+        memory_kind: MemoryKind::Device,
+        device: Some(DeviceId {
+            kind: DeviceKind::Gpu(GpuBackendKind::Cuda),
+            ordinal: 0,
+        }),
+    }
+}
+
+fn device_c64(shape: Vec<usize>, len: usize) -> Tensor {
+    Tensor::C64(
+        TypedTensor::from_buffer_col_major(
+            shape,
+            Buffer::Backend(Arc::new(BufferHandle::new_with_len(31, len))),
+            device_placement(),
+        )
+        .unwrap(),
+    )
+}
+
+fn device_f64(shape: Vec<usize>, len: usize) -> Tensor {
+    Tensor::F64(
+        TypedTensor::from_buffer_col_major(
+            shape,
+            Buffer::Backend(Arc::new(BufferHandle::new_with_len(32, len))),
+            device_placement(),
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn callback_abi_preserves_placement_variants_and_types_domain_errors() {
+    let shape = vec![3, 3, 1, 1, 1, 1];
+    let host_link: Tensor =
+        TypedTensor::from_vec_col_major(shape.clone(), vec![Complex64::default(); 9])
+            .unwrap()
+            .into();
+    let device_link = device_c64(shape.clone(), 9);
+    let action_error = WilsonActionOp::new(6.0)
+        .unwrap()
+        .execute(&[&device_link, &device_link, &device_link, &device_link])
+        .unwrap_err();
+    assert!(matches!(
+        action_error,
+        TensorError::BackendFailure {
+            op: "TypedTensor::host_data",
+            ..
+        }
+    ));
+
+    let device_tangent = device_c64(shape, 9);
+    let jvp_error = WilsonActionJvpOp::new(6.0, vec![1])
+        .unwrap()
+        .execute(&[
+            &host_link,
+            &host_link,
+            &host_link,
+            &host_link,
+            &device_tangent,
+        ])
+        .unwrap_err();
+    assert!(matches!(
+        jvp_error,
+        TensorError::BackendFailure {
+            op: "TypedTensor::host_data",
+            ..
+        }
+    ));
+
+    let device_seed = device_f64(vec![], 1);
+    let force_error = WilsonForceOp::new(6.0)
+        .unwrap()
+        .execute(&[&host_link, &host_link, &host_link, &host_link, &device_seed])
+        .unwrap_err();
+    assert!(matches!(
+        force_error,
+        TensorError::BackendFailure {
+            op: "TypedTensor::host_data",
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        abi_error(
+            WILSON_ACTION_FAMILY,
+            GaugeError::InvalidDirection { direction: 4 }
+        ),
+        TensorError::InvalidConfig {
+            op: WILSON_ACTION_FAMILY,
+            ..
+        }
+    ));
 }
