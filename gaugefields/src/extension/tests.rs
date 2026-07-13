@@ -3,6 +3,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use tenferro_runtime::extension::ExtensionOp;
 use tenferro_runtime::{DType, SymDim};
+use tenferro_tensor::{Tensor, TypedTensor};
 
 fn link_shape() -> Vec<SymDim> {
     [3, 3, 2, 2, 2, 2].into_iter().map(SymDim::from).collect()
@@ -94,4 +95,42 @@ fn metadata_rejects_wrong_dtype_rank_color_lattice_tangent_and_seed() {
     assert!(WilsonActionOp::new(6.0)
         .infer_output_meta(&[DType::C64; 4], &[&shape, &shape, &shape, &wrong_lattice],)
         .is_err());
+}
+
+#[test]
+fn jvp_and_force_host_references_execute_registered_contracts() {
+    let links = crate::cold_su3(crate::LatticeShape4::new([1, 1, 1, 1]).unwrap()).unwrap();
+    let erased: [Tensor; 4] =
+        std::array::from_fn(|mu| Tensor::C64(links.links()[mu].typed().clone()));
+    let zero_tangent: Tensor =
+        TypedTensor::from_vec_col_major(vec![3, 3, 1, 1, 1, 1], vec![Complex64::default(); 9])
+            .unwrap()
+            .into();
+    let jvp_inputs = [
+        &erased[0],
+        &erased[1],
+        &erased[2],
+        &erased[3],
+        &zero_tangent,
+    ];
+    let jvp = WilsonActionJvpOp::new(6.0, vec![2])
+        .unwrap()
+        .execute(&jvp_inputs)
+        .unwrap();
+    assert_eq!(jvp[0].as_slice::<f64>().unwrap(), &[0.0]);
+
+    let seed: Tensor = TypedTensor::from_vec_col_major(vec![], vec![0.0_f64])
+        .unwrap()
+        .into();
+    let force_inputs = [&erased[0], &erased[1], &erased[2], &erased[3], &seed];
+    let force = WilsonForceOp::new(6.0).execute(&force_inputs).unwrap();
+    assert_eq!(force.len(), 4);
+    for output in force {
+        assert_eq!(output.shape(), &[3, 3, 1, 1, 1, 1]);
+        assert!(output
+            .as_slice::<Complex64>()
+            .unwrap()
+            .iter()
+            .all(|value| *value == Complex64::default()));
+    }
 }
