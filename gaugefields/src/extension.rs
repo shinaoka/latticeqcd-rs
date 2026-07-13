@@ -218,6 +218,14 @@ impl WilsonActionJvpOp {
             active_dirs,
         })
     }
+
+    pub(crate) fn beta(&self) -> f64 {
+        f64::from_bits(self.beta)
+    }
+
+    pub(crate) fn active_dirs(&self) -> &[usize] {
+        &self.active_dirs
+    }
 }
 
 impl ExtensionOp for WilsonActionJvpOp {
