@@ -1,5 +1,6 @@
 use gaugefields::{
-    cold_su3, exp_ta, exp_ta_update, CpuEvolutionContext, GaugeError, LatticeShape4, TaGaugeField,
+    cold_su3, exp_ta, exp_ta_update, CpuEvolutionContext, GaugeError, LatticeShape4, Mat3,
+    TaGaugeField,
 };
 use tenferro_cpu::CpuBackend;
 use tenferro_runtime::CacheStats;
@@ -74,6 +75,43 @@ fn context_contract_cache_and_zero_update() -> Result<(), GaugeError> {
         assert_eq!(links.links()[mu].typed().host_data().unwrap(), expected);
     }
     assert!(!format!("{context:?}").contains("cache:"));
+    Ok(())
+}
+
+#[test]
+fn cancelling_momentum_propagates_through_field_update() -> Result<(), GaugeError> {
+    let lattice = LatticeShape4::new([1, 1, 1, 1])?;
+    let tensors = std::array::from_fn(|_| {
+        TypedTensor::from_vec_col_major(
+            vec![8, 1, 1, 1, 1],
+            vec![1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        )
+        .unwrap()
+    });
+    let momentum = TaGaugeField::new(tensors, lattice)?;
+    let mut links = cold_su3(lattice)?;
+    exp_ta_update(
+        &mut CpuEvolutionContext::new(CpuBackend::new()),
+        &mut links,
+        1.0,
+        &momentum,
+    )?;
+    let expected = exp_ta(1.0, &[1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])?;
+    for link in links.links() {
+        let residual = link
+            .typed()
+            .host_data()
+            .unwrap()
+            .iter()
+            .zip(expected.as_array())
+            .map(|(a, b)| (*a - *b).norm())
+            .fold(0.0_f64, f64::max);
+        assert!(residual < 2e-12);
+        assert_ne!(
+            link.typed().host_data().unwrap(),
+            Mat3::identity().as_array()
+        );
+    }
     Ok(())
 }
 

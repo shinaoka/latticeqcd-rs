@@ -58,7 +58,7 @@ pub fn exp_ta(t: f64, coeffs: &[f64; 8]) -> Result<Mat3, GaugeError> {
         });
     }
     let scaled = coeffs.map(|value| 0.5 * t * value);
-    if scaled.iter().sum::<f64>() == 0.0 {
+    if scaled.iter().all(|value| *value == 0.0) {
         return Ok(Mat3::identity());
     }
     let v = Mat3::hermitian_from_gell_mann(scaled);

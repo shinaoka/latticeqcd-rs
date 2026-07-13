@@ -20,6 +20,11 @@ fn julia_exp_ta_fixture_has_branch_provenance() {
     assert!(cases.iter().any(|case| case["branch"] == "fallback"));
     assert!(cases.iter().any(|case| case["name"] == "near_below"));
     assert!(cases.iter().any(|case| case["name"] == "near_above"));
+    assert!(cases.iter().any(|case| case["name"] == "balanced_pair"));
+    assert!(metadata["balanced_oracle"]
+        .as_str()
+        .unwrap()
+        .contains("csum cancellation"));
     for case in cases {
         assert_eq!(case["coefficients"].as_array().unwrap().len(), 8);
         assert!(case["t"].as_f64().unwrap().is_finite());
@@ -148,4 +153,30 @@ fn exp_ta_identity_small_t_derivative_and_ta_roundtrip() {
         max_residual < 1e-10,
         "small-t derivative residual={max_residual}"
     );
+}
+
+#[test]
+fn cancelling_coefficients_are_nonidentity_and_have_the_correct_derivative() {
+    let coefficients = [1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    let actual = exp_ta(1.0, &coefficients).unwrap();
+    let distance = actual
+        .as_array()
+        .iter()
+        .zip(Mat3::identity().as_array())
+        .map(|(a, b)| (*a - *b).norm())
+        .fold(0.0_f64, f64::max);
+    assert!(distance > 0.1, "balanced generator returned identity");
+
+    let h = 1e-6;
+    let plus = exp_ta(h, &coefficients).unwrap();
+    let minus = exp_ta(-h, &coefficients).unwrap();
+    let generator = Mat3::from_gell_mann_coefficients(coefficients);
+    let residual = plus
+        .as_array()
+        .iter()
+        .zip(minus.as_array())
+        .zip(generator.as_array())
+        .map(|((plus, minus), expected)| ((*plus - *minus) / (2.0 * h) - expected).norm())
+        .fold(0.0_f64, f64::max);
+    assert!(residual < 1e-10, "balanced derivative residual={residual}");
 }

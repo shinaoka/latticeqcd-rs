@@ -370,6 +370,12 @@ Port the Julia reference algorithm semantically:
 5. use the Julia fourth-order fallback in the same degenerate/near-degenerate
    region.
 
+The identity shortcut tests `t == 0` through the scaled vector being entirely
+zero; it must not use the algebraic sum of coefficients because nonzero
+Gell-Mann components can cancel in that scalar sum. Balanced-vector fixtures
+use pinned Julia `exp_T4` or `LinearAlgebra.exp` after the same generator
+construction to guard this historical `exptU!` shortcut defect.
+
 This must not be replaced by tenferro `eigh`: tenferro provides decomposition
 but not the required matrix exponential, and exact branch/fallback compatibility
 is part of the Julia oracle. Scalar fixed-size arithmetic stays in `Mat3`.
@@ -389,6 +395,9 @@ Gram--Schmidt step and conjugated cross-product third row. Norms at or below
 `1e-30` are treated as singular. It rejects non-finite or
 numerically singular input with a typed error. Field-level normalization may be
 crate-private until an external use case justifies another public API.
+Pinned `normalize_U!` fixtures use a `1^4` no-wing field and cover identity, a
+deterministically perturbed SU(3) matrix, and controlled drift. Separate failure
+tests require exact row-0/row-1 singular diagnostics and bitwise rollback.
 
 ### 10.4 Test-only HMC driver
 
