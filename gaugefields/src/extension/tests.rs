@@ -5,13 +5,13 @@ use tenferro_runtime::extension::ExtensionOp;
 use tenferro_runtime::{DType, SymDim};
 use tenferro_tensor::{Tensor, TypedTensor};
 
+type InferredMeta = tenferro_tensor::Result<Vec<(DType, Vec<SymDim>)>>;
+
 fn link_shape() -> Vec<SymDim> {
     [3, 3, 2, 2, 2, 2].into_iter().map(SymDim::from).collect()
 }
 
-fn assert_invalid_without_panic(
-    result: std::thread::Result<tenferro_tensor::Result<Vec<(DType, Vec<SymDim>)>>>,
-) {
+fn assert_invalid_without_panic(result: std::thread::Result<InferredMeta>) {
     assert!(result.is_ok(), "metadata inference panicked");
     assert!(result.unwrap().is_err());
 }
