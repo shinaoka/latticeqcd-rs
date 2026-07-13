@@ -5,6 +5,7 @@ mod field;
 mod fixture;
 mod force;
 mod index;
+mod kernel;
 mod mat3;
 mod observables;
 

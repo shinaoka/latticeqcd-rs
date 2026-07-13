@@ -40,3 +40,13 @@ fn direct_sum_equals_measurement_staple_contraction() {
         Err(GaugeError::InvalidDirection { direction: 4 })
     ));
 }
+
+#[test]
+fn shared_prepared_kernel_contract() {
+    let observables = include_str!("../src/observables.rs");
+    let force = include_str!("../src/force.rs");
+    assert!(observables.contains("PreparedGaugeField::new"));
+    assert!(!observables.contains("load_link("));
+    assert!(force.contains("PreparedGaugeField::new"));
+    assert!(!force.contains("fn site_staple"));
+}
