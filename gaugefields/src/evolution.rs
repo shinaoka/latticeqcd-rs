@@ -1,4 +1,4 @@
-use crate::{GaugeError, GaugeLinkTensor, GaugeLinks, Mat3, TaGaugeField};
+use crate::{require_su3, GaugeError, GaugeLinkTensor, GaugeLinks, Mat3, TaGaugeField};
 use num_complex::Complex64 as C;
 use std::fmt;
 use tenferro_cpu::CpuBackend;
@@ -308,6 +308,7 @@ where
             component: 8,
         });
     }
+    require_su3(links)?;
     if t == 0.0 {
         return Ok(());
     }

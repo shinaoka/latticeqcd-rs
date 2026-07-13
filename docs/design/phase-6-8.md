@@ -357,6 +357,9 @@ replaced, so an error leaves the field unchanged. The operation does not
 construct a backend, cache, or graph executor internally. Phase 8 is an
 explicit CPU/host API; a later device implementation requires a separately
 designed placement-aware surface rather than an implicit transfer.
+Lattice compatibility, finite time, and the NC=3 semantic boundary are all
+validated before the `t == 0` fast path. Thus zero-time calls cannot use a
+shortcut to accept otherwise unsupported NC=2 links.
 
 Transactional failure tests use a private per-call contraction closure inside
 that same cached session. Fault selection is owned by one invocation; there is

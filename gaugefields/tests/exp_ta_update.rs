@@ -1,7 +1,8 @@
 use gaugefields::{
-    cold_su3, exp_ta, exp_ta_update, CpuEvolutionContext, GaugeError, LatticeShape4, Mat3,
-    TaGaugeField,
+    cold_su3, exp_ta, exp_ta_update, CpuEvolutionContext, GaugeError, GaugeLinkTensor, GaugeLinks,
+    LatticeShape4, Mat3, TaGaugeField,
 };
+use num_complex::Complex64;
 use tenferro_cpu::CpuBackend;
 use tenferro_runtime::CacheStats;
 use tenferro_tensor::TypedTensor;
@@ -146,6 +147,62 @@ fn huge_finite_momentum_is_rejected_without_mutating_any_link() -> Result<(), Ga
         {
             assert_eq!(actual.re.to_bits(), expected.re.to_bits());
             assert_eq!(actual.im.to_bits(), expected.im.to_bits());
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn nc2_is_rejected_before_zero_or_nonzero_update_without_mutation() -> Result<(), GaugeError> {
+    let lattice = LatticeShape4::new([1, 1, 1, 1])?;
+    let links: [GaugeLinkTensor; 4] = std::array::from_fn(|mu| {
+        let values = vec![
+            Complex64::new(1.0 + mu as f64 / 10.0, 0.0),
+            Complex64::new(0.0, 0.0),
+            Complex64::new(0.0, 0.0),
+            Complex64::new(1.0, 0.0),
+        ];
+        GaugeLinkTensor::from_typed(
+            TypedTensor::from_vec_col_major(vec![2, 2, 1, 1, 1, 1], values).unwrap(),
+            lattice,
+        )
+        .unwrap()
+    });
+    let momentum = TaGaugeField::new(
+        std::array::from_fn(|_| {
+            TypedTensor::from_vec_col_major(vec![8, 1, 1, 1, 1], vec![0.125; 8]).unwrap()
+        }),
+        lattice,
+    )?;
+    for t in [0.0, 0.25] {
+        let mut field = GaugeLinks::new(std::array::from_fn(|mu| {
+            GaugeLinkTensor::from_typed(links[mu].typed().clone(), lattice).unwrap()
+        }))?;
+        let before: [Vec<_>; 4] =
+            std::array::from_fn(|mu| field.links()[mu].typed().host_data().unwrap().to_vec());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            exp_ta_update(
+                &mut CpuEvolutionContext::new(CpuBackend::new()),
+                &mut field,
+                t,
+                &momentum,
+            )
+        }));
+        assert!(matches!(
+            result,
+            Ok(Err(GaugeError::UnsupportedNc { found: 2 }))
+        ));
+        for (mu, expected) in before.iter().enumerate() {
+            for (actual, expected) in field.links()[mu]
+                .typed()
+                .host_data()
+                .unwrap()
+                .iter()
+                .zip(expected)
+            {
+                assert_eq!(actual.re.to_bits(), expected.re.to_bits());
+                assert_eq!(actual.im.to_bits(), expected.im.to_bits());
+            }
         }
     }
     Ok(())
