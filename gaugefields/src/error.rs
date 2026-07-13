@@ -62,6 +62,11 @@ pub enum GaugeError {
     },
     #[error("beta must be finite, found {found}")]
     NonFiniteBeta { found: f64 },
+    #[error("{operation} received non-finite SU(3) input at component {component}")]
+    NonFiniteSu3Input {
+        operation: &'static str,
+        component: usize,
+    },
     #[error("tenferro graph construction failed: {0}")]
     Graph(#[source] tenferro_runtime::Error),
 }

@@ -272,6 +272,10 @@ impl Mat3 {
             C::new(-2.0 * c8 / r, 0.0),
         ])
     }
+    /// Constructs `A=(i/2)Σ c_a λ_a` in the established TA convention.
+    pub fn from_gell_mann_coefficients(c: [f64; 8]) -> Self {
+        Self::hermitian_from_gell_mann(c).scaled(C::new(0.0, 0.5))
+    }
 }
 impl Index<(usize, usize)> for Mat3 {
     type Output = C;
