@@ -1,5 +1,6 @@
 use crate::{
-    kernel::PreparedGaugeField, GaugeError, GaugeLinkTensor, GaugeLinks, Mat3, TaGaugeField,
+    kernel::{validate_beta, PreparedGaugeField},
+    GaugeError, GaugeLinkTensor, GaugeLinks, Mat3, TaGaugeField,
 };
 use num_complex::Complex64 as C;
 use tenferro_tensor::TypedTensor;
@@ -44,6 +45,7 @@ fn complex_outputs(
     beta: f64,
     gradient: bool,
 ) -> Result<[GaugeLinkTensor; 4], GaugeError> {
+    validate_beta(beta)?;
     let prepared = PreparedGaugeField::new(u)?;
     Ok([
         complex_output(u, &prepared, beta, gradient, 0)?,
@@ -62,6 +64,7 @@ pub fn action_gradient(u: &GaugeLinks, beta: f64) -> Result<[GaugeLinkTensor; 4]
 }
 /// TA coefficients of `U_mu * dsdu_mu`, without integrator or extra `1/NC` factors.
 pub fn gauge_force(u: &GaugeLinks, beta: f64) -> Result<TaGaugeField, GaugeError> {
+    validate_beta(beta)?;
     let prepared = PreparedGaugeField::new(u)?;
     let count = checked_count(8, u.lattice().nv(), std::mem::size_of::<f64>())?;
     let [nx, ny, nz, nt] = u.lattice().extents();

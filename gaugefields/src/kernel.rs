@@ -4,6 +4,14 @@ use tenferro_tensor::Tensor;
 
 type NeighborTable = Vec<[usize; 4]>;
 
+pub(crate) fn validate_beta(beta: f64) -> Result<(), GaugeError> {
+    if beta.is_finite() {
+        Ok(())
+    } else {
+        Err(GaugeError::NonFiniteBeta { found: beta })
+    }
+}
+
 pub(crate) struct PreparedGaugeField<'a> {
     lattice: LatticeShape4,
     links: [&'a [Complex64]; 4],

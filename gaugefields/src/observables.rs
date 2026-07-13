@@ -1,4 +1,7 @@
-use crate::{kernel::PreparedGaugeField, GaugeError, GaugeLinkTensor, GaugeLinks};
+use crate::{
+    kernel::{validate_beta, PreparedGaugeField},
+    GaugeError, GaugeLinkTensor, GaugeLinks,
+};
 use num_complex::Complex64;
 use tenferro_tensor::TypedTensor;
 
@@ -12,6 +15,7 @@ pub fn normalized_plaquette(links: &GaugeLinks) -> Result<f64, GaugeError> {
 }
 /// Wilson action `-(beta/NC) sum Re tr P`.
 pub fn wilson_action(links: &GaugeLinks, beta: f64) -> Result<f64, GaugeError> {
+    validate_beta(beta)?;
     Ok(-beta / (links.nc() as f64) * plaquette_sum(links)?)
 }
 /// Forward/upper measurement staple, distinct from the force staple.

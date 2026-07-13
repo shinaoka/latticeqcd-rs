@@ -1,4 +1,7 @@
-use crate::{kernel::PreparedGaugeField, GaugeError, Mat3};
+use crate::{
+    kernel::{validate_beta, PreparedGaugeField},
+    GaugeError, Mat3,
+};
 use num_complex::Complex64;
 use std::{any::Any, hash::Hasher, sync::Arc};
 use tenferro_runtime::extension::{
@@ -131,10 +134,11 @@ pub(crate) struct WilsonActionOp {
 }
 
 impl WilsonActionOp {
-    pub(crate) fn new(beta: f64) -> Self {
-        Self {
+    pub(crate) fn new(beta: f64) -> tenferro_tensor::Result<Self> {
+        validate_beta(beta).map_err(|error| abi_error(WILSON_ACTION_FAMILY, error))?;
+        Ok(Self {
             beta: beta.to_bits(),
-        }
+        })
     }
 }
 
@@ -193,6 +197,7 @@ pub(crate) struct WilsonActionJvpOp {
 
 impl WilsonActionJvpOp {
     pub(crate) fn new(beta: f64, active_dirs: Vec<usize>) -> tenferro_tensor::Result<Self> {
+        validate_beta(beta).map_err(|error| abi_error(WILSON_ACTION_JVP_FAMILY, error))?;
         if active_dirs.iter().any(|&mu| mu >= 4)
             || active_dirs.windows(2).any(|pair| pair[0] >= pair[1])
         {
@@ -309,10 +314,11 @@ pub(crate) struct WilsonForceOp {
 }
 
 impl WilsonForceOp {
-    pub(crate) fn new(beta: f64) -> Self {
-        Self {
+    pub(crate) fn new(beta: f64) -> tenferro_tensor::Result<Self> {
+        validate_beta(beta).map_err(|error| abi_error(WILSON_FORCE_FAMILY, error))?;
+        Ok(Self {
             beta: beta.to_bits(),
-        }
+        })
     }
 }
 
@@ -395,10 +401,9 @@ pub fn wilson_action_traced(
     links: [&TracedTensor; 4],
     beta: f64,
 ) -> Result<TracedTensor, GaugeError> {
-    if !beta.is_finite() {
-        return Err(GaugeError::NonFiniteBeta { found: beta });
-    }
-    let outputs = apply(Arc::new(WilsonActionOp::new(beta)), &links).map_err(GaugeError::Graph)?;
+    validate_beta(beta)?;
+    let op = WilsonActionOp::new(beta).map_err(|error| GaugeError::Tensor(error.to_string()))?;
+    let outputs = apply(Arc::new(op), &links).map_err(GaugeError::Graph)?;
     if outputs.len() != 1 {
         return Err(GaugeError::Tensor(
             "Wilson action must produce one output".into(),
