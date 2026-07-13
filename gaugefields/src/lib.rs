@@ -8,6 +8,8 @@ mod extension;
 mod field;
 mod fixture;
 mod force;
+#[cfg(test)]
+mod hmc_test_support;
 mod index;
 mod kernel;
 mod mat3;
