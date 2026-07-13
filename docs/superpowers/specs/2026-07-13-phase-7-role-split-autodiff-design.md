@@ -38,6 +38,12 @@ compared componentwise with `action_gradient` for seeds `1`, `-2.5`, and
 `0.25`, including inactive directions. Mutation checks detect sign and
 constant-output errors.
 
+The public `AdContext::jvp` accepts one `wrt` tensor. Graph-transformation tests
+therefore alias that source into selected action slots to exercise ordered one-,
+two-, and four-slot activity. A private test builds and executes the JVP
+extension graph directly for a genuine four-direction checked-fixture sum; no
+public construction API is added for private payloads.
+
 Each rule does O(1) work with respect to graph size: it inspects only bounded
 local inputs, adds at most one node, and never scans or clones the graph.
 Runtime/AD ownership stays outside operation paths. Cross-placeholder symbolic

@@ -25,37 +25,64 @@ fn link(value: f64) -> TracedTensor {
 
 #[test]
 fn active_direction_payload_omits_inactive_tangents() {
-    let source = link(1.0);
-    let fixed_one = link(2.0);
-    let fixed_three = link(3.0);
-    let tangent = link(0.25);
-    let action = wilson_action_traced([&source, &fixed_one, &source, &fixed_three], 5.7).unwrap();
-    let ad = AdContext::builder()
-        .with_extension_rules(ad_rules().unwrap())
-        .build()
-        .unwrap();
-    let jvp = ad.jvp(&action, &source, &tangent).unwrap();
-
-    let matching = jvp
-        .graph()
-        .operations()
-        .iter()
-        .filter_map(|node| match &node.operation {
-            StdTensorOp::Extension(op) if op.family_id() == "gaugefields.wilson_action_jvp.v1" => {
-                Some((op.input_count(), node.inputs.len(), &node.role))
+    for active_dirs in [vec![1], vec![0, 2], vec![0, 1, 2, 3]] {
+        let source = link(1.0);
+        let fixed: [TracedTensor; 4] = std::array::from_fn(|mu| link(2.0 + mu as f64));
+        let tangent = link(0.25);
+        // `AdContext::jvp` accepts one `wrt`; aliasing that one traced source
+        // into selected action slots deliberately exercises multi-slot activity.
+        let action_inputs: [&TracedTensor; 4] = std::array::from_fn(|mu| {
+            if active_dirs.contains(&mu) {
+                &source
+            } else {
+                &fixed[mu]
             }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(matching.len(), 1);
-    assert_eq!(matching[0].0, 6);
-    assert_eq!(matching[0].1, 6);
-    assert_eq!(
-        matching[0].2,
-        &OperationRole::Linearized {
-            active_mask: vec![false, false, false, false, true, true]
-        }
-    );
+        });
+        let action = wilson_action_traced(action_inputs, 5.7).unwrap();
+        let ad = AdContext::builder()
+            .with_extension_rules(ad_rules().unwrap())
+            .build()
+            .unwrap();
+        let jvp = ad.jvp(&action, &source, &tangent).unwrap();
+
+        let matching = jvp
+            .graph()
+            .operations()
+            .iter()
+            .filter_map(|node| match &node.operation {
+                StdTensorOp::Extension(op)
+                    if op.family_id() == "gaugefields.wilson_action_jvp.v1" =>
+                {
+                    Some((
+                        format!("{op:?}"),
+                        op.input_count(),
+                        node.inputs.len(),
+                        &node.role,
+                    ))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1, "active_dirs={active_dirs:?}");
+        let expected_arity = 4 + active_dirs.len();
+        assert_eq!(matching[0].1, expected_arity);
+        assert_eq!(matching[0].2, expected_arity);
+        assert!(
+            matching[0]
+                .0
+                .contains(&format!("active_dirs: {active_dirs:?}")),
+            "payload={} expected active_dirs={active_dirs:?}",
+            matching[0].0
+        );
+        assert_eq!(
+            matching[0].3,
+            &OperationRole::Linearized {
+                active_mask: std::iter::repeat_n(false, 4)
+                    .chain(std::iter::repeat_n(true, active_dirs.len()))
+                    .collect()
+            }
+        );
+    }
 }
 
 fn tangent(mu: usize, len: usize) -> Vec<Complex64> {
@@ -99,7 +126,7 @@ fn jvp_matches_finite_difference_sweep_and_gradient_inner_product() {
     let beta = fixture.metadata().beta;
     let base = fixture.links();
     let gradient = action_gradient(base, beta).unwrap();
-    for mu in [0, 2, 3] {
+    for mu in 0..4 {
         let values = tangent(mu, 9 * base.lattice().nv());
         let traced_links: [TracedTensor; 4] = std::array::from_fn(|direction| {
             TracedTensor::from_vec_col_major(

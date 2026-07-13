@@ -3,6 +3,13 @@ use computegraph::{GraphOperation, ValueKey};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use tenferro_ops::input_key::TensorInputKey;
 
+type LinearizeCase<'a> = (
+    &'a dyn ExtensionOp,
+    &'a [ValueKey<StdTensorOp>],
+    &'a [ValueKey<StdTensorOp>],
+    &'a [Option<LocalValueId>],
+);
+
 #[derive(Default)]
 struct CaptureBuilder {
     emissions: usize,
@@ -72,12 +79,7 @@ fn private_rules_reject_malformed_contracts_without_panicking_or_emitting() {
     let primals = (0..4).map(key).collect::<Vec<_>>();
     let outputs = vec![key(10)];
     let tangents = vec![Some(20), None, Some(22), None];
-    let mut linearize_cases: Vec<(
-        &dyn ExtensionOp,
-        &[ValueKey<StdTensorOp>],
-        &[ValueKey<StdTensorOp>],
-        &[Option<LocalValueId>],
-    )> = vec![
+    let mut linearize_cases: Vec<LinearizeCase<'_>> = vec![
         (&force, &primals, &outputs, &tangents),
         (&action, &primals[..3], &outputs, &tangents),
         (&action, &primals, &[], &tangents),
