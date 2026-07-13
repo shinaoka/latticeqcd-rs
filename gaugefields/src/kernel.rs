@@ -1,8 +1,6 @@
-use crate::{neighbor_site, require_su3, GaugeError, GaugeLinks, LatticeShape4, Mat3};
+use crate::{require_su3, GaugeError, GaugeLinks, LatticeShape4, Mat3};
 use num_complex::Complex64;
 use tenferro_tensor::Tensor;
-
-type NeighborTable = Vec<[usize; 4]>;
 
 pub(crate) fn validate_beta(beta: f64) -> Result<(), GaugeError> {
     if beta.is_finite() {
@@ -15,8 +13,7 @@ pub(crate) fn validate_beta(beta: f64) -> Result<(), GaugeError> {
 pub(crate) struct PreparedGaugeField<'a> {
     lattice: LatticeShape4,
     links: [&'a [Complex64]; 4],
-    plus: NeighborTable,
-    minus: NeighborTable,
+    site_strides: [usize; 4],
 }
 
 impl<'a> PreparedGaugeField<'a> {
@@ -70,36 +67,59 @@ impl<'a> PreparedGaugeField<'a> {
     }
 
     fn from_parts(lattice: LatticeShape4, links: [&'a [Complex64]; 4]) -> Result<Self, GaugeError> {
-        let neighbor_bytes = lattice
-            .nv()
-            .checked_mul(std::mem::size_of::<[usize; 4]>())
-            .and_then(|n| n.checked_mul(2))
-            .ok_or(GaugeError::AllocationOverflow)?;
-        if neighbor_bytes > isize::MAX as usize {
-            return Err(GaugeError::AllocationOverflow);
-        }
-        let mut plus = Vec::with_capacity(lattice.nv());
-        let mut minus = Vec::with_capacity(lattice.nv());
-        for site in 0..lattice.nv() {
-            plus.push([
-                neighbor_site(site, 0, 1, lattice)?,
-                neighbor_site(site, 1, 1, lattice)?,
-                neighbor_site(site, 2, 1, lattice)?,
-                neighbor_site(site, 3, 1, lattice)?,
-            ]);
-            minus.push([
-                neighbor_site(site, 0, -1, lattice)?,
-                neighbor_site(site, 1, -1, lattice)?,
-                neighbor_site(site, 2, -1, lattice)?,
-                neighbor_site(site, 3, -1, lattice)?,
-            ]);
-        }
+        let [nx, ny, nz, _] = lattice.extents();
+        let xy = nx.checked_mul(ny).ok_or(GaugeError::VolumeOverflow)?;
+        let xyz = xy.checked_mul(nz).ok_or(GaugeError::VolumeOverflow)?;
         Ok(Self {
             lattice,
             links,
-            plus,
-            minus,
+            site_strides: [1, nx, xy, xyz],
         })
+    }
+
+    fn shifted_site(&self, site: usize, mu: usize, forward: bool) -> Result<usize, GaugeError> {
+        if site >= self.nv() {
+            return Err(GaugeError::SiteOutOfBounds {
+                site,
+                volume: self.nv(),
+            });
+        }
+        let extent = *self
+            .lattice
+            .extents()
+            .get(mu)
+            .ok_or(GaugeError::InvalidDirection { direction: mu })?;
+        let stride = self.site_strides[mu];
+        let coordinate = (site / stride) % extent;
+        let wrap = (extent - 1)
+            .checked_mul(stride)
+            .ok_or(GaugeError::VolumeOverflow)?;
+        // INVARIANT: `site < nv`, positive validated extents, and column-major
+        // strides make both the adjacent step and boundary wrap stay in 0..nv.
+        if forward {
+            if coordinate + 1 < extent {
+                site.checked_add(stride).ok_or(GaugeError::VolumeOverflow)
+            } else {
+                site.checked_sub(wrap).ok_or(GaugeError::VolumeOverflow)
+            }
+        } else if coordinate > 0 {
+            site.checked_sub(stride).ok_or(GaugeError::VolumeOverflow)
+        } else {
+            site.checked_add(wrap).ok_or(GaugeError::VolumeOverflow)
+        }
+    }
+
+    fn plus_site(&self, site: usize, mu: usize) -> Result<usize, GaugeError> {
+        self.shifted_site(site, mu, true)
+    }
+
+    fn minus_site(&self, site: usize, mu: usize) -> Result<usize, GaugeError> {
+        self.shifted_site(site, mu, false)
+    }
+
+    #[cfg(test)]
+    fn auxiliary_metadata_bytes(&self) -> usize {
+        std::mem::size_of_val(&self.site_strides)
     }
 
     pub(crate) fn nv(&self) -> usize {
@@ -120,13 +140,15 @@ impl<'a> PreparedGaugeField<'a> {
     pub(crate) fn plaquette_sum(&self) -> Result<f64, GaugeError> {
         let mut sum = 0.0;
         // INVARIANT: validated SU(3) links use compact nine-element site blocks.
-        for (site, next) in self.plus.iter().enumerate() {
+        for site in 0..self.nv() {
             for mu in 0..4 {
                 for nu in (mu + 1)..4 {
+                    let next_mu = self.plus_site(site, mu)?;
+                    let next_nu = self.plus_site(site, nu)?;
                     let p = self
                         .link(mu, site)?
-                        .mul(self.link(nu, next[mu])?)
-                        .mul_adj_right(self.link(mu, next[nu])?)
+                        .mul(self.link(nu, next_mu)?)
+                        .mul_adj_right(self.link(mu, next_nu)?)
                         .mul_adj_right(self.link(nu, site)?);
                     sum += p.trace().re;
                 }
@@ -141,8 +163,8 @@ impl<'a> PreparedGaugeField<'a> {
             if nu != mu {
                 let term = self
                     .link(nu, site)?
-                    .mul(self.link(mu, self.plus[site][nu])?)
-                    .mul_adj_right(self.link(nu, self.plus[site][mu])?);
+                    .mul(self.link(mu, self.plus_site(site, nu)?)?)
+                    .mul_adj_right(self.link(nu, self.plus_site(site, mu)?)?);
                 staple.add_scaled_real(1.0, term);
             }
         }
@@ -155,18 +177,45 @@ impl<'a> PreparedGaugeField<'a> {
             if nu != mu {
                 let upper = self
                     .link(nu, site)?
-                    .mul(self.link(mu, self.plus[site][nu])?)
-                    .mul_adj_right(self.link(nu, self.plus[site][mu])?);
-                let back = self.minus[site][nu];
+                    .mul(self.link(mu, self.plus_site(site, nu)?)?)
+                    .mul_adj_right(self.link(nu, self.plus_site(site, mu)?)?);
+                let back = self.minus_site(site, nu)?;
                 let lower = self
                     .link(nu, back)?
                     .adjoint()
                     .mul(self.link(mu, back)?)
-                    .mul(self.link(nu, self.plus[back][mu])?);
+                    .mul(self.link(nu, self.plus_site(back, mu)?)?);
                 staple.add_scaled_real(1.0, upper);
                 staple.add_scaled_real(1.0, lower);
             }
         }
         Ok(staple)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::neighbor_site;
+
+    #[test]
+    fn prepared_metadata_is_constant_size_and_neighbors_wrap_exactly() {
+        let lattice = LatticeShape4::new([1_000_000, 3, 2, 5]).unwrap();
+        let empty = &[][..];
+        let prepared = PreparedGaugeField::from_parts(lattice, [empty; 4]).unwrap();
+        assert!(prepared.auxiliary_metadata_bytes() <= 8 * std::mem::size_of::<usize>());
+
+        for site in [0, 1, lattice.nv() / 2, lattice.nv() - 1] {
+            for mu in 0..4 {
+                assert_eq!(
+                    prepared.plus_site(site, mu).unwrap(),
+                    neighbor_site(site, mu, 1, lattice).unwrap()
+                );
+                assert_eq!(
+                    prepared.minus_site(site, mu).unwrap(),
+                    neighbor_site(site, mu, -1, lattice).unwrap()
+                );
+            }
+        }
     }
 }
