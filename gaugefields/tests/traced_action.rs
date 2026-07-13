@@ -12,6 +12,52 @@ fn traced_inputs(shape: &[usize]) -> [TracedTensor; 4] {
 }
 
 #[test]
+fn unresolved_symbolic_lattice_mismatch_reaches_runtime_and_is_rejected() {
+    let traced = std::array::from_fn::<_, 4, _>(|_| {
+        TracedTensor::input_symbolic_shape(DType::C64, 6).unwrap()
+    });
+    let output =
+        wilson_action_traced([&traced[0], &traced[1], &traced[2], &traced[3]], 6.0).unwrap();
+    let common_shape = [3, 3, 1, 1, 1, 1];
+    let mismatched_shape = [3, 3, 2, 1, 1, 1];
+    let specs = traced
+        .iter()
+        .map(|input| (input, DType::C64, &common_shape[..]))
+        .collect::<Vec<_>>();
+    let program = GraphCompiler::new()
+        .compile_with_input_specs(&output, &specs)
+        .unwrap();
+    let common = Tensor::C64(
+        TypedTensor::from_vec_col_major(
+            common_shape.to_vec(),
+            vec![num_complex::Complex64::default(); 9],
+        )
+        .unwrap(),
+    );
+    let mismatched = Tensor::C64(
+        TypedTensor::from_vec_col_major(
+            mismatched_shape.to_vec(),
+            vec![num_complex::Complex64::default(); 18],
+        )
+        .unwrap(),
+    );
+    let bindings = [
+        (&traced[0], &common),
+        (&traced[1], &common),
+        (&traced[2], &common),
+        (&traced[3], &mismatched),
+    ];
+    let mut executor = GraphExecutor::new(CpuBackend::new());
+    executor.register_extension(register_runtime).unwrap();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        executor.run_with_inputs(&program, &bindings)
+    }));
+    assert!(result.is_ok(), "runtime validation panicked");
+    let error = result.unwrap().unwrap_err().to_string();
+    assert!(error.contains("binding shape mismatch"), "{error}");
+}
+
+#[test]
 fn registered_host_runtime_rejects_backend_links_without_panicking() {
     let shape = [3, 3, 1, 1, 1, 1];
     let traced = traced_inputs(&shape);

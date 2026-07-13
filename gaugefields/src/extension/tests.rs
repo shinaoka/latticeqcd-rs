@@ -9,6 +9,13 @@ fn link_shape() -> Vec<SymDim> {
     [3, 3, 2, 2, 2, 2].into_iter().map(SymDim::from).collect()
 }
 
+fn assert_invalid_without_panic(
+    result: std::thread::Result<tenferro_tensor::Result<Vec<(DType, Vec<SymDim>)>>>,
+) {
+    assert!(result.is_ok(), "metadata inference panicked");
+    assert!(result.unwrap().is_err());
+}
+
 #[test]
 fn family_identity_uses_beta_bits_and_active_directions() {
     let action = WilsonActionOp::new(6.0).unwrap();
@@ -107,6 +114,42 @@ fn metadata_rejects_wrong_dtype_rank_color_lattice_tangent_and_seed() {
         .unwrap()
         .infer_output_meta(&[DType::C64; 4], &[&shape, &shape, &shape, &wrong_lattice],)
         .is_err());
+
+    let jvp = WilsonActionJvpOp::new(6.0, vec![2]).unwrap();
+    let jvp_shapes = [&shape[..], &shape, &shape, &shape, &shape];
+    assert_invalid_without_panic(std::panic::catch_unwind(|| {
+        jvp.infer_output_meta(
+            &[DType::C64, DType::C64, DType::C64, DType::C64, DType::F64],
+            &jvp_shapes,
+        )
+    }));
+    assert_invalid_without_panic(std::panic::catch_unwind(|| {
+        jvp.infer_output_meta(
+            &[DType::C64; 5],
+            &[&shape, &shape, &shape, &shape, &rank_five],
+        )
+    }));
+    let mut wrong_tangent_shape = shape.clone();
+    wrong_tangent_shape[5] = SymDim::from(7);
+    assert_invalid_without_panic(std::panic::catch_unwind(|| {
+        jvp.infer_output_meta(
+            &[DType::C64; 5],
+            &[&shape, &shape, &shape, &shape, &wrong_tangent_shape],
+        )
+    }));
+
+    let scalar: [SymDim; 0] = [];
+    let force = WilsonForceOp::new(6.0).unwrap();
+    assert_invalid_without_panic(std::panic::catch_unwind(|| {
+        force.infer_output_meta(&[DType::C64; 5], &[&shape, &shape, &shape, &shape, &scalar])
+    }));
+    let rank_one_seed = [SymDim::from(1)];
+    assert_invalid_without_panic(std::panic::catch_unwind(|| {
+        force.infer_output_meta(
+            &[DType::C64, DType::C64, DType::C64, DType::C64, DType::F64],
+            &[&shape, &shape, &shape, &shape, &rank_one_seed],
+        )
+    }));
 }
 
 #[test]
@@ -148,4 +191,24 @@ fn jvp_and_force_host_references_execute_registered_contracts() {
             .iter()
             .all(|value| *value == Complex64::default()));
     }
+}
+
+#[test]
+fn host_reference_rejects_exact_link_shape_mismatch_without_panicking() {
+    let common: Tensor =
+        TypedTensor::from_vec_col_major(vec![3, 3, 1, 1, 1, 1], vec![Complex64::default(); 9])
+            .unwrap()
+            .into();
+    let mismatched: Tensor =
+        TypedTensor::from_vec_col_major(vec![3, 3, 2, 1, 1, 1], vec![Complex64::default(); 18])
+            .unwrap()
+            .into();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        WilsonActionOp::new(6.0)
+            .unwrap()
+            .execute(&[&common, &common, &common, &mismatched])
+    }));
+    assert!(result.is_ok(), "host-reference validation panicked");
+    let error = result.unwrap().unwrap_err().to_string();
+    assert!(error.contains("different lattice shape"), "{error}");
 }
