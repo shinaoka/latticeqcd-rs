@@ -118,10 +118,12 @@ impl ExtensionLinearTransposeRule for WilsonJvpTranspose {
                     "JVP payload downcast failed",
                 )
             })?;
+        let expected_mask = std::iter::repeat_n(false, 4)
+            .chain(std::iter::repeat_n(true, jvp.active_dirs().len()))
+            .collect::<Vec<_>>();
         if cotangent_out.len() != 1
             || inputs.len() != jvp.input_count()
-            || active_mask.len() != inputs.len()
-            || active_mask[..4].iter().any(|&active| active)
+            || active_mask != expected_mask
         {
             return Err(ADRuleError::invalid_input(
                 WILSON_ACTION_JVP_FAMILY,
@@ -179,3 +181,6 @@ pub fn ad_rules() -> Result<ExtensionRuleSet, ExtensionRegistryError> {
         .with_linearize(Arc::new(WilsonActionLinearize))?
         .with_linear_transpose(Arc::new(WilsonJvpTranspose))
 }
+
+#[cfg(test)]
+mod tests;
