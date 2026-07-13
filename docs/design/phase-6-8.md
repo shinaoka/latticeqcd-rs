@@ -358,6 +358,11 @@ construct a backend, cache, or graph executor internally. Phase 8 is an
 explicit CPU/host API; a later device implementation requires a separately
 designed placement-aware surface rather than an implicit transfer.
 
+Transactional failure tests use a private per-call contraction closure inside
+that same cached session. Fault selection is owned by one invocation; there is
+no global or thread-local injection state that could affect concurrent HMC or
+evolution calls. The public wrapper supplies only the real cached-dot closure.
+
 ### 10.2 `exp_ta` algorithm
 
 Port the Julia reference algorithm semantically:

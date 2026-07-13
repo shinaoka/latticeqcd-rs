@@ -3,15 +3,9 @@ use num_complex::Complex64 as C;
 use std::fmt;
 use tenferro_cpu::CpuBackend;
 use tenferro_tensor::{
-    BackendRuntimeCache, BackendSessionHost, CacheStats, DotGeneralConfig, RuntimeCacheControl,
-    SessionCachedDot, Tensor, TypedTensor,
+    BackendRuntimeCache, BackendSession, BackendSessionHost, CacheStats, DotGeneralConfig,
+    RuntimeCacheControl, SessionCachedDot, Tensor, TypedTensor,
 };
-
-#[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[cfg(test)]
-static FAIL_DIRECTION: AtomicUsize = AtomicUsize::new(usize::MAX);
 
 fn taylor_four(v: Mat3) -> Mat3 {
     let v2 = v.mul(v);
@@ -274,6 +268,34 @@ pub fn exp_ta_update(
     t: f64,
     momentum: &TaGaugeField,
 ) -> Result<(), GaugeError> {
+    exp_ta_update_with(
+        context,
+        links,
+        t,
+        momentum,
+        |session, mu, lhs, rhs, config| {
+            SessionCachedDot::dot_general_cached(session, Some(mu), lhs, rhs, config)
+        },
+    )
+}
+
+fn exp_ta_update_with<F>(
+    context: &mut CpuEvolutionContext,
+    links: &mut GaugeLinks,
+    t: f64,
+    momentum: &TaGaugeField,
+    mut contract: F,
+) -> Result<(), GaugeError>
+where
+    F: FnMut(
+            &mut dyn BackendSession,
+            usize,
+            &Tensor,
+            &Tensor,
+            &DotGeneralConfig,
+        ) -> tenferro_tensor::Result<Tensor>
+        + Send,
+{
     if links.lattice() != momentum.lattice() {
         return Err(GaugeError::Shape {
             expected: links.lattice().extents().to_vec(),
@@ -330,22 +352,7 @@ pub fn exp_ta_update(
             &mut context.cache,
             |session| -> tenferro_tensor::Result<Vec<Tensor>> {
                 (0..4)
-                    .map(|mu| {
-                        #[cfg(test)]
-                        if FAIL_DIRECTION.load(Ordering::Relaxed) == mu {
-                            return Err(tenferro_tensor::Error::backend_failure(
-                                "exp_ta_update test injection",
-                                format!("direction {mu}"),
-                            ));
-                        }
-                        SessionCachedDot::dot_general_cached(
-                            session,
-                            Some(mu),
-                            &exponentials[mu],
-                            &rhs[mu],
-                            &config,
-                        )
-                    })
+                    .map(|mu| contract(session, mu, &exponentials[mu], &rhs[mu], &config))
                     .collect()
             },
         )

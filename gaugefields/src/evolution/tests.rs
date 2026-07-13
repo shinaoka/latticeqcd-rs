@@ -20,14 +20,22 @@ fn injected_direction_failures_leave_every_link_bitwise_unchanged() {
         let mut links = cold_su3(lattice).unwrap();
         let before: [Vec<C>; 4] =
             std::array::from_fn(|mu| links.links()[mu].typed().host_data().unwrap().to_vec());
-        FAIL_DIRECTION.store(direction, Ordering::Relaxed);
-        let result = exp_ta_update(
+        let result = exp_ta_update_with(
             &mut CpuEvolutionContext::new(CpuBackend::new()),
             &mut links,
             0.1,
             &momentum(lattice),
+            |session, mu, lhs, rhs, config| {
+                if mu == direction {
+                    Err(tenferro_tensor::Error::backend_failure(
+                        "exp_ta_update test injection",
+                        format!("direction {mu}"),
+                    ))
+                } else {
+                    SessionCachedDot::dot_general_cached(session, Some(mu), lhs, rhs, config)
+                }
+            },
         );
-        FAIL_DIRECTION.store(usize::MAX, Ordering::Relaxed);
         assert!(matches!(result, Err(GaugeError::Evolution { .. })));
         for (mu, expected_direction) in before.iter().enumerate() {
             for (actual, expected) in links.links()[mu]
