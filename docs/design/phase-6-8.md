@@ -126,8 +126,10 @@ not duplicate a tenferro backend operation or introduce hidden materialization.
 
 ## 6. Runtime ownership and initialization
 
-There is no public `CpuEngine` type in the target tenferro API. The application
-owns a `CpuBackend`, a `GraphExecutor<CpuBackend>`, and an `AdContext`.
+There is no public `CpuEngine` type in the target tenferro API. For traced work,
+the application owns a `GraphExecutor<CpuBackend>` and an `AdContext`. For
+Phase 8 eager evolution, it owns a `CpuEvolutionContext`, which privately owns
+a `CpuBackend` and its associated tenferro runtime cache.
 
 They are constructed once per execution owner and reused:
 
@@ -137,9 +139,10 @@ They are constructed once per execution owner and reused:
 - tests: once per test fixture when several graph executions belong together.
 
 They are not constructed per operation and are not process-global singletons.
-The executor owns runtime caches, extension registration, and workspace. The
-AD context separately owns AD rules and transform caches. CPU parallelism stays
-under the backend's `CpuContext`.
+The executor owns graph runtime caches, extension registration, and workspace.
+The AD context separately owns AD rules and transform caches. The evolution
+context owns the backend buffer pool and persistent contraction-analysis cache.
+CPU parallelism stays under each backend's `CpuContext`.
 
 Illustrative application setup (exact builder names follow the pinned tenferro
 revision):
@@ -152,6 +155,8 @@ executor.register_extension(gaugefields::register_runtime)?;
 let ad = AdContext::builder()
     .with_extension_rules(gaugefields::ad_rules()?)
     .build()?;
+
+let mut evolution = CpuEvolutionContext::new(CpuBackend::try_new()?);
 ```
 
 The snippet is illustrative rather than a public doctest until the API lands.
@@ -191,7 +196,9 @@ pub fn wilson_action_traced(
     beta: f64,
 ) -> Result<TracedTensor>;
 
-pub fn register_runtime(/* tenferro registry arguments */) -> Result<()>;
+pub fn register_runtime<B: TensorBackend + 'static>(
+    executor: &mut ExtensionExecutor<B>,
+) -> Result<(), ExtensionRuntimeRegistryError>;
 ```
 
 The JVP and force op constructors, validation records, runtime callbacks, and
@@ -225,9 +232,12 @@ and symbolic equality suffice:
 - action/JVP output is scalar F64 and force outputs match the four links.
 
 One `register_runtime` call registers a `HostReferenceRuntime` for all three
-families. `lower_to_standard_ops` returns no lowering in this phase. Public eager
-extension wrappers are not introduced because the existing direct API is the
-explicit eager/host surface.
+families. It is deliberately shaped as the closure accepted by
+`GraphExecutor::register_extension`, so applications call
+`executor.register_extension(gaugefields::register_runtime)?`. The underlying
+argument is the executor-owned `ExtensionExecutor<B>`. `lower_to_standard_ops`
+returns no lowering in this phase. Public eager extension wrappers are not
+introduced because the existing direct API is the explicit eager/host surface.
 
 ### 8.3 Phase 6 verification gate
 
@@ -299,9 +309,18 @@ The public surface consists of domain kernels, not a sampler framework:
 ```text
 pub struct TaGaugeField { /* [TypedTensor<f64>; 4] */ }
 
+pub struct CpuEvolutionContext { /* CpuBackend + associated runtime cache */ }
+
+impl CpuEvolutionContext {
+    pub fn new(backend: CpuBackend) -> Self;
+    pub fn backend(&self) -> &CpuBackend;
+    pub fn clear_cache(&mut self);
+    pub fn cache_stats(&self) -> CacheStats;
+}
+
 pub fn exp_ta(t: f64, coeffs: &[f64; 8]) -> Result<Mat3>;
 pub fn exp_ta_update(
-    backend: &mut CpuBackend,
+    context: &mut CpuEvolutionContext,
     links: &mut GaugeLinks,
     t: f64,
     momentum: &TaGaugeField,
@@ -309,14 +328,21 @@ pub fn exp_ta_update(
 pub fn normalize_su3(matrix: &mut Mat3) -> Result<()>;
 ```
 
-`exp_ta_update` takes the application-owned `CpuBackend` explicitly and reuses
-its context, provider choice, buffer pool, and contraction caches. It does not
-construct a backend or graph executor internally. Phase 8 is therefore an
+`CpuEvolutionContext::new(CpuBackend)` initializes the associated
+`<CpuBackend as BackendRuntimeCache>::RuntimeCache` with its bounded `Default`.
+The cache field remains private. The context has a compact hand-written `Debug`,
+`backend()` for read-only backend inspection, `clear_cache()`, and
+`cache_stats() -> CacheStats`; it exposes no public mutable-backend escape.
+
+`exp_ta_update` takes the application-owned evolution context, enters
+`BackendSessionHost::with_backend_session_cached`, and uses stable contraction
+cache slots `0..3` for link directions `mu=0..3`. Repeated same-shape updates
+therefore reuse analysis plans as well as the backend context, provider choice,
+and buffer pool. All four contraction outputs are validated before any link is
+replaced, so an error leaves the field unchanged. The operation does not
+construct a backend, cache, or graph executor internally. Phase 8 is an
 explicit CPU/host API; a later device implementation requires a separately
-designed placement-aware surface rather than an implicit transfer. If the
-pinned Phase 6 revision changes only the concrete backend trait spelling, the
-signature may generalize to the narrowest public tenferro dot-capable backend
-trait without changing these ownership or placement semantics.
+designed placement-aware surface rather than an implicit transfer.
 
 ### 10.2 `exp_ta` algorithm
 
@@ -377,6 +403,10 @@ performance claim. It does not justify exposing the driver as a public sampler.
 - degenerate and near-degenerate fixtures prove the fallback branch;
 - results satisfy unitarity and determinant-one tolerances;
 - `exp_ta_update` agrees with a small explicit `Mat3` reference calculation;
+- two same-shape updates retain the same nonzero contraction-cache entry count,
+  and `clear_cache` resets it to zero;
+- injected contraction failure at each direction leaves all four links
+  bit-for-bit unchanged;
 - normalization fixtures cover drift, singular rejection, and non-finite input;
 - HMC checks above pass under a fixed seed without becoming public API;
 - tests demonstrate that batched update reaches tenferro `dot_general` and does

@@ -193,7 +193,7 @@ git commit -m "feat: define Wilson extension families"
 
 - [ ] **Step 1: Write runtime tests**
 
-Construct four `TracedTensor::input_concrete_shape(DType::C64, shape)` inputs, call `wilson_action_traced([&u0,&u1,&u2,&u3], beta)`, compile with `GraphCompiler::compile_with_input_specs`, and run via `GraphExecutor::run_with_inputs`. Assert missing registration contains `missing runtime`, registered cold/random/Julia outputs match direct action, duplicate registration is idempotent, GPU/backend input returns an error mentioning explicit download, and no `GaugeIdentityOp` remains.
+Construct four `TracedTensor::input_concrete_shape(DType::C64, shape)` inputs, call `wilson_action_traced([&u0,&u1,&u2,&u3], beta)`, compile with `GraphCompiler::compile_with_input_specs`, and run via `GraphExecutor::run_with_inputs`. Register exactly with `executor.register_extension(gaugefields::register_runtime)?`. Assert missing registration contains `missing runtime`, registered cold/random/Julia outputs match direct action, repeating that exact registration call is idempotent, GPU/backend input returns an error mentioning explicit download, and no `GaugeIdentityOp` remains.
 
 - [ ] **Step 2: Verify red**
 
@@ -212,6 +212,9 @@ pub fn register_runtime<B: TensorBackend + 'static>(
 ```
 
 by registering three `Arc::new(HostReferenceRuntime::<B>::new(FAMILY))` values through `executor.registry_mut().register(...)`.
+This public function is the closure contract consumed directly as
+`graph_executor.register_extension(gaugefields::register_runtime)?`; do not
+wrap it in a second application-facing registry API.
 
 - [ ] **Step 4: Implement the public traced wrapper**
 
@@ -221,7 +224,9 @@ Implement the exact public signature from the design, build `Arc<WilsonActionOp>
 
 Run: `cargo test -p gaugefields --test traced_action --all-features && cargo run -p gaugefields --example traced_wilson_action --all-features`
 
-Expected: PASS; the example prints equal direct and traced action values and asserts their residual below `1e-13`.
+Expected: PASS; both test and example use
+`executor.register_extension(gaugefields::register_runtime)?`, and the example
+prints equal direct and traced action values with residual below `1e-13`.
 
 - [ ] **Step 6: Commit**
 

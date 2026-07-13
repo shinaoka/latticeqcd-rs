@@ -52,3 +52,13 @@ Added repository rules adapted for gaugefields-rs from tenferro-rs.
   mutually compatible revision because main may advance after this design.
 - The public trait spelling used to invoke batched dot may change at that pin;
   ownership, explicit backend, placement, and no-fallback semantics remain fixed.
+
+## Plan review corrections
+
+- Resolved Phase 8 runtime ownership with a public `CpuEvolutionContext` that
+  privately owns `CpuBackend` and its associated bounded runtime cache.
+- Required cached backend sessions, stable contraction slots `0..3`, observable
+  cache stats/clear behavior, persistent same-shape reuse, and transactional
+  replacement only after all four direction contractions validate.
+- Clarified that `register_runtime` is passed directly to
+  `GraphExecutor::register_extension(gaugefields::register_runtime)`.

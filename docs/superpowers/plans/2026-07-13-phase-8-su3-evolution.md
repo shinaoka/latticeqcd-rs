@@ -4,22 +4,17 @@
 
 **Goal:** Add Julia-compatible SU(3) exponentiation, normalization, batched link evolution, and crate-private HMC sanity checks.
 
-**Architecture:** Fixed-size `Mat3` code owns the exact Gaugefields.jl Cardano/fallback exponential and normalization projection. Field evolution builds one packed exponential tensor per direction and delegates `E U` to tenferro `dot_general`; a private deterministic leapfrog driver composes the public kernels only for regression tests.
+**Architecture:** Fixed-size `Mat3` code owns the exact Gaugefields.jl Cardano/fallback exponential and normalization projection. Public `CpuEvolutionContext` privately owns a `CpuBackend` and its persistent bounded runtime cache; field evolution uses one cached backend session, stable direction cache slots, and transactional replacement after four successful `dot_general` contractions. A private deterministic leapfrog driver composes the public kernels only for regression tests.
 
-**Tech Stack:** Rust 2021, tenferro `51bc0a7bef274e20d08fc054856cb4d74c284cbe`, `CpuBackend`, `BackendSessionHost`, `TensorDot`, `DotGeneralConfig`, `TypedTensor`, Gaugefields.jl `9e5719970770f4497405a856315c90bef7f74449`, `rand`/`rand_chacha` for deterministic test support.
+**Tech Stack:** Rust 2021, tenferro `51bc0a7bef274e20d08fc054856cb4d74c284cbe`, `CpuBackend`, `BackendRuntimeCache`, `BackendSessionHost`, `RuntimeCacheControl`, `CacheStats`, `SessionCachedDot`, `DotGeneralConfig`, `TypedTensor`, Gaugefields.jl `9e5719970770f4497405a856315c90bef7f74449`, `rand`/`rand_chacha` for deterministic test support.
 
 ---
-
-## Required ownership decision before execution
-
-At tenferro `51bc0a7b`, `CpuBackend::dot_general` and `BackendSessionHost::with_backend_session` create a fresh private `GemmAnalysisCache` per call. Persistent contraction analysis reuse is available only through `BackendSessionHost::with_backend_session_cached`, whose cache type is `<CpuBackend as BackendRuntimeCache>::RuntimeCache` and whose concrete `GemmAnalysisCache` is private. Therefore the design's exact public signature `exp_ta_update(&mut CpuBackend, ...)` cannot also guarantee reuse of contraction-analysis caches across calls.
-
-Execution must adopt one explicit resolution before Task 4: retain the designed signature and document that backend context/buffer pool are reused but analysis is per call, or amend the public surface to an application-owned evolution owner that privately stores both `CpuBackend` and its associated runtime cache. The tasks below use the designed signature and do not claim cross-call analysis-cache reuse; changing that choice requires a design amendment before production edits.
 
 ## File structure
 
 - Modify `gaugefields/src/mat3.rs`: TA construction helpers, Julia exponential, finite/unitarity/determinant helpers, normalization.
-- Create `gaugefields/src/evolution.rs`: public `exp_ta`, `normalize_su3`, and batched `exp_ta_update`.
+- Create `gaugefields/src/evolution.rs`: public `CpuEvolutionContext`, `exp_ta`, `normalize_su3`, and cached batched `exp_ta_update`.
+- Create `gaugefields/src/evolution/tests.rs`: private contraction-failure injection and four-direction transactional tests.
 - Modify `gaugefields/src/field.rs`: final `TaGaugeField` construction/access APIs needed by evolution and momentum updates.
 - Modify `gaugefields/src/error.rs`: non-finite, singular normalization, and backend/contraction variants.
 - Modify `gaugefields/src/lib.rs`: public numerical exports only.
@@ -147,21 +142,44 @@ git commit -m "feat: normalize matrices to SU3"
 
 - [ ] **Step 1: Write update and delegation tests**
 
-Assert the designed public signature with `CpuBackend`, cold/nontrivial momentum agreement against an explicit site-local `Mat3` reference on `2^4`, unchanged links for `t=0`, shape/lattice mismatch and backend placement errors, and transactional behavior on failure. Add a source contract requiring `BackendSessionHost::with_backend_session` and `dot_general` in `evolution.rs` and forbidding a site loop that multiplies full-field `Mat3` pairs.
+Assert these public contracts:
+
+```rust
+let _: fn(CpuBackend) -> CpuEvolutionContext = CpuEvolutionContext::new;
+let _: fn(&CpuEvolutionContext) -> &CpuBackend = CpuEvolutionContext::backend;
+let _: fn(&mut CpuEvolutionContext) = CpuEvolutionContext::clear_cache;
+let _: fn(&CpuEvolutionContext) -> CacheStats = CpuEvolutionContext::cache_stats;
+let _: fn(&mut CpuEvolutionContext, &mut GaugeLinks, f64, &TaGaugeField) -> Result<(), GaugeError> = exp_ta_update;
+```
+
+Check compact `Debug` omits cache contents and tensor values. Run two same-shape nonzero updates and prove persistent analysis reuse: first update yields nonzero cache entries, second retains the same entry count while producing valid new links; `clear_cache()` resets entries to zero. Document that `Default` plus the only stable slots `0..3` bounds gaugefields' retained analysis entries. Also cover cold/nontrivial momentum agreement against an explicit site-local `Mat3` reference on `2^4`, unchanged links for `t=0`, shape/lattice mismatch, and backend placement errors. Put a crate-private contraction callback seam in `evolution.rs` and module tests in `evolution/tests.rs`; inject failure at direction 0, 1, 2, and 3 separately and compare all four link buffers bit-for-bit with their originals. Add a source contract requiring `with_backend_session_cached`, `dot_general_cached(Some(mu), ...)`, and output collection before link replacement, while forbidding uncached `with_backend_session` and a site loop that multiplies full-field `Mat3` pairs.
 
 - [ ] **Step 2: Verify red**
 
 Run: `cargo test -p gaugefields --test exp_ta_update`
 
-Expected: compile failure because `exp_ta_update` does not exist.
+Expected: compile failure because `CpuEvolutionContext` and `exp_ta_update` do not exist.
 
 - [ ] **Step 3: Pack exponentials once per direction**
 
 Borrow each F64 momentum direction once, call `exp_ta` per site, and build compact `TypedTensor<Complex64>` with shape `[3,3,Lx,Ly,Lz,Lt]`. Convert typed values to `Tensor::C64` without copying.
 
-- [ ] **Step 4: Delegate the field product**
+- [ ] **Step 4: Implement the persistent evolution owner**
 
-Enter one `BackendSessionHost::with_backend_session` closure for the update and call `TensorDot::dot_general` once per direction with:
+Define:
+
+```rust
+pub struct CpuEvolutionContext {
+    backend: CpuBackend,
+    cache: <CpuBackend as BackendRuntimeCache>::RuntimeCache,
+}
+```
+
+`new` stores the supplied backend and initializes the associated cache with `Default::default()`. Implement compact manual `Debug`, read-only `backend()`, `clear_cache()` via `RuntimeCacheControl::clear`, and `cache_stats()` via `RuntimeCacheControl::stats`. Keep backend/cache mutation private to `evolution.rs`; expose no `backend_mut`.
+
+- [ ] **Step 5: Delegate all four products transactionally**
+
+Enter one `BackendSessionHost::with_backend_session_cached(&mut context.backend, &mut context.cache, |session| ...)` closure and call `SessionCachedDot::dot_general_cached` once per direction with stable `Some(mu)` cache slots and:
 
 ```rust
 DotGeneralConfig {
@@ -172,18 +190,25 @@ DotGeneralConfig {
 }
 ```
 
-Validate four C64 outputs before replacing any link tensor. Reclaim temporary backend outputs where ownership permits. This reuses the `CpuBackend` context and buffer pool but, under the selected designed signature, does not promise cross-call GEMM-analysis-cache reuse.
+Accumulate all four results in temporary typed outputs. Validate dtype, shape,
+host placement, and lattice agreement for every output before replacing any
+link tensor; if direction 0, 1, 2, or 3 fails, discard temporaries and leave all
+four original links unchanged. Reclaim temporary backend outputs where
+ownership permits. Stable slots `0..3` make repeated same-shape calls reuse the
+context's persistent bounded analysis cache.
 
-- [ ] **Step 5: Verify green**
+- [ ] **Step 6: Verify green**
 
 Run: `cargo test -p gaugefields --test exp_ta_update -- --nocapture`
 
-Expected: PASS with max site/reference residual below the documented tolerance.
+Expected: PASS with max site/reference residual below the documented tolerance,
+unchanged cache entry count on the second same-shape update, zero entries after
+clear, and transactional preservation for failures in all four directions.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add gaugefields/src/evolution.rs gaugefields/src/field.rs gaugefields/tests/exp_ta_update.rs
+git add gaugefields/src/evolution.rs gaugefields/src/evolution/tests.rs gaugefields/src/field.rs gaugefields/tests/exp_ta_update.rs
 git commit -m "feat: apply batched SU3 link evolution"
 ```
 
@@ -226,12 +251,12 @@ git commit -m "test: add private HMC sanity driver"
 
 **Files:**
 - Modify: `README.md`
-- Modify: `docs/design/phase-6-8.md` if the cache-ownership decision changes the durable contract
+- Modify: `docs/design/phase-6-8.md`
 - Create: `docs/worklogs/2026-07-13-phase-8.md`
 
 - [ ] **Step 1: Record algorithms, ownership, and evidence**
 
-Document exact Julia lines/revision, analytic/fallback rationale, normalization thresholds, explicit CPU placement, batched `dot_general` dimensions, selected cache-ownership resolution, release measurements for packing/update scaling, HMC parameters, residuals, acceptance, commands, and remaining risks. Keep the HMC driver absent from public docs/API listings.
+Document exact Julia lines/revision, analytic/fallback rationale, normalization thresholds, explicit CPU placement, `CpuEvolutionContext` lifecycle, bounded-default cache ownership, stable slots, cache stats/clear behavior, transactional four-direction replacement, batched `dot_general` dimensions, release measurements for packing/update scaling, HMC parameters, residuals, acceptance, commands, and remaining risks. Keep the HMC driver absent from public docs/API listings.
 
 - [ ] **Step 2: Run the complete Phase 8 gate**
 
