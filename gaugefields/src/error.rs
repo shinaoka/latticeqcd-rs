@@ -54,4 +54,8 @@ pub enum GaugeError {
     Npy { mu: usize, detail: String },
     #[error("tenferro tensor construction failed: {0}")]
     Tensor(String),
+    #[error("beta must be finite, found {found}")]
+    NonFiniteBeta { found: f64 },
+    #[error("tenferro graph construction failed: {0}")]
+    Graph(#[source] tenferro_runtime::Error),
 }

@@ -22,7 +22,7 @@ fn family_identity_uses_beta_bits_and_active_directions() {
 
     let jvp = WilsonActionJvpOp::new(6.0, vec![0, 3]).unwrap();
     assert_eq!(jvp.family_id(), WILSON_ACTION_JVP_FAMILY);
-    assert_eq!(jvp.active_dirs(), &[0, 3]);
+    assert_eq!(jvp.active_dirs, [0, 3]);
     assert!(WilsonActionJvpOp::new(6.0, vec![3, 0]).is_err());
     assert!(WilsonActionJvpOp::new(6.0, vec![0, 0]).is_err());
     assert!(WilsonActionJvpOp::new(6.0, vec![4]).is_err());

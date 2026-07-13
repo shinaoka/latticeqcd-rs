@@ -11,6 +11,7 @@ mod mat3;
 mod observables;
 
 pub use error::GaugeError;
+pub use extension::{register_runtime, wilson_action_traced};
 pub use field::{
     cold_su3, require_su3, Boundary, GaugeLinkTensor, GaugeLinks, LatticeShape4, TaGaugeField,
 };
