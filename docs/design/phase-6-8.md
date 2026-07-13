@@ -221,15 +221,22 @@ The JVP active-direction list is sorted, unique, restricted to `0..4`, and part
 of structural identity. Its input arity is `4 + active_dirs.len()`, so inactive
 tangents are neither materialized nor represented by fake zeros.
 
-Shape inference validates, without requiring concrete lattice values when rank
-and symbolic equality suffice:
+Shape inference validates:
 
 - four link inputs are C64 rank 6;
 - their first two extents are exactly `3, 3`;
-- all lattice extents agree;
+- contradictory known lattice constants are rejected;
 - active tangents match their corresponding link dtype and shape;
 - the force seed is scalar F64;
 - action/JVP output is scalar F64 and force outputs match the four links.
+
+Independent unresolved `TensorAxis` dimensions are accepted during inference:
+tenferro cannot yet express equality constraints between separate placeholders
+([tenferro-rs #1370](https://github.com/tensor4all/tenferro-rs/issues/1370)).
+The executor validates placeholder bindings, and every host reference repeats
+exact link/tangent dtype, rank, color-axis, and lattice-shape equality checks
+before numerical execution. Phase 6 will adopt graph-level equality guards when
+the upstream constraint mechanism becomes available.
 
 One `register_runtime` call registers a `HostReferenceRuntime` for all three
 families. It is deliberately shaped as the closure accepted by

@@ -158,7 +158,7 @@ git commit -m "refactor: share prepared Wilson kernels"
 
 - [ ] **Step 1: Write metadata and identity tests**
 
-Test constants `gaugefields.wilson_action.v1`, `gaugefields.wilson_action_jvp.v1`, and `gaugefields.wilson_force.v1`; `beta.to_bits()` hash/equality; JVP active directions sorted, unique, and in `0..4`; arities `4`, `4+n`, and `5`; scalar F64 action/JVP output; four C64 force outputs. Cover wrong dtype, rank, color axes, lattice equality, tangent equality, scalar seed dtype/rank, and malformed active directions with `catch_unwind` to prove typed errors.
+Test constants `gaugefields.wilson_action.v1`, `gaugefields.wilson_action_jvp.v1`, and `gaugefields.wilson_force.v1`; `beta.to_bits()` hash/equality; JVP active directions sorted, unique, and in `0..4`; arities `4`, `4+n`, and `5`; scalar F64 action/JVP output; four C64 force outputs. Cover wrong dtype, rank, color axes, known lattice contradictions, tangent dtype/rank/known-shape equality, scalar seed dtype/rank, and malformed active directions with `catch_unwind` to prove typed errors. Add a traced test showing that independently unresolved lattice axes are accepted at inference and a mismatched concrete binding is rejected at runtime without panic.
 
 - [ ] **Step 2: Verify red**
 
@@ -168,7 +168,7 @@ Expected: compile failure because the three operations do not exist.
 
 - [ ] **Step 3: Implement payloads and symbolic inference**
 
-Implement crate-private `WilsonActionOp`, `WilsonActionJvpOp`, and `WilsonForceOp` using `ExtensionOp`. Hash `beta.to_bits()` plus active direction bytes, downcast in `payload_eq`, return `Ok(None)` from `lower_to_standard_ops`, and validate `SymDim::constant_value()` for the two color axes while comparing all symbolic lattice dimensions structurally.
+Implement crate-private `WilsonActionOp`, `WilsonActionJvpOp`, and `WilsonForceOp` using `ExtensionOp`. Hash `beta.to_bits()` plus active direction bytes, downcast in `payload_eq`, return `Ok(None)` from `lower_to_standard_ops`, and validate `SymDim::constant_value()` for the two color axes. Reject contradictory known lattice constants, but accept independent unresolved `TensorAxis` values because tenferro cannot yet express cross-placeholder equality constraints ([tenferro-rs #1370](https://github.com/tensor4all/tenferro-rs/issues/1370)). Repeat exact link/tangent equality validation in every `HostReference` before numerical execution, and adopt graph-level guards when the upstream constraint mechanism lands.
 
 - [ ] **Step 4: Verify green**
 
