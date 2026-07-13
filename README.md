@@ -59,6 +59,10 @@ checked direct/traced action parity.
 `exp_ta` reproduces Gaugefields.jl's fixed-size SU(3) Cardano algorithm and its
 fourth-order near-degenerate fallback. `normalize_su3` performs the matching
 NC=3 row projection and rejects non-finite or singular input transactionally.
+Finite inputs that overflow coefficient scaling, Cardano intermediates,
+fallback powers, or final assembly return the distinct typed
+`Su3NumericalRange` error; this phase does not silently clamp or add an
+alternative scaling-and-squaring algorithm.
 Field updates use an application-owned CPU context:
 
 ```rust

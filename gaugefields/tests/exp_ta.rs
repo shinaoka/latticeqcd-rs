@@ -180,3 +180,16 @@ fn cancelling_coefficients_are_nonidentity_and_have_the_correct_derivative() {
         .fold(0.0_f64, f64::max);
     assert!(residual < 1e-10, "balanced derivative residual={residual}");
 }
+
+#[test]
+fn finite_inputs_that_overflow_numerical_range_are_rejected() {
+    let mut scaling_overflow = [0.0; 8];
+    scaling_overflow[0] = f64::MAX;
+    let result = exp_ta(f64::MAX, &scaling_overflow);
+    assert!(matches!(result, Err(GaugeError::Su3NumericalRange { .. })));
+
+    let mut cardano_overflow = [0.0; 8];
+    cardano_overflow[0] = f64::MAX.sqrt() * 1.5;
+    let result = exp_ta(1.0, &cardano_overflow);
+    assert!(matches!(result, Err(GaugeError::Su3NumericalRange { .. })));
+}

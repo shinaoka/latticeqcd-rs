@@ -116,6 +116,42 @@ fn cancelling_momentum_propagates_through_field_update() -> Result<(), GaugeErro
 }
 
 #[test]
+fn huge_finite_momentum_is_rejected_without_mutating_any_link() -> Result<(), GaugeError> {
+    let lattice = LatticeShape4::new([1, 1, 1, 1])?;
+    let tensors = std::array::from_fn(|_| {
+        TypedTensor::from_vec_col_major(
+            vec![8, 1, 1, 1, 1],
+            vec![f64::MAX, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        )
+        .unwrap()
+    });
+    let momentum = TaGaugeField::new(tensors, lattice)?;
+    let mut links = cold_su3(lattice)?;
+    let before: [Vec<_>; 4] =
+        std::array::from_fn(|mu| links.links()[mu].typed().host_data().unwrap().to_vec());
+    let result = exp_ta_update(
+        &mut CpuEvolutionContext::new(CpuBackend::new()),
+        &mut links,
+        f64::MAX,
+        &momentum,
+    );
+    assert!(matches!(result, Err(GaugeError::Su3NumericalRange { .. })));
+    for (mu, expected) in before.iter().enumerate() {
+        for (actual, expected) in links.links()[mu]
+            .typed()
+            .host_data()
+            .unwrap()
+            .iter()
+            .zip(expected)
+        {
+            assert_eq!(actual.re.to_bits(), expected.re.to_bits());
+            assert_eq!(actual.im.to_bits(), expected.im.to_bits());
+        }
+    }
+    Ok(())
+}
+
+#[test]
 #[ignore = "release-only scaling diagnostic"]
 fn release_update_scaling() -> Result<(), GaugeError> {
     for extent in [2, 4, 8] {

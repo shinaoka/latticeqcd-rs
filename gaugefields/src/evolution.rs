@@ -25,6 +25,20 @@ fn taylor_four(v: Mat3) -> Mat3 {
     out
 }
 
+fn numerical_range(stage: &'static str) -> GaugeError {
+    GaugeError::Su3NumericalRange {
+        operation: "exp_ta",
+        stage,
+    }
+}
+
+fn finite_matrix(matrix: &Mat3) -> bool {
+    matrix
+        .as_array()
+        .iter()
+        .all(|value| value.re.is_finite() && value.im.is_finite())
+}
+
 fn julia_eigenvector(v: Mat3, eigenvalue: f64) -> ([C; 3], f64) {
     let v1 = v[(0, 0)].re;
     let v3 = v[(0, 1)].re;
@@ -58,10 +72,16 @@ pub fn exp_ta(t: f64, coeffs: &[f64; 8]) -> Result<Mat3, GaugeError> {
         });
     }
     let scaled = coeffs.map(|value| 0.5 * t * value);
+    if scaled.iter().any(|value| !value.is_finite()) {
+        return Err(numerical_range("coefficient scaling"));
+    }
     if scaled.iter().all(|value| *value == 0.0) {
         return Ok(Mat3::identity());
     }
     let v = Mat3::hermitian_from_gell_mann(scaled);
+    if !finite_matrix(&v) {
+        return Err(numerical_range("generator construction"));
+    }
     let trv3 = v.trace().re / 3.0;
     let v1 = v[(0, 0)].re;
     let v3 = v[(0, 1)].re;
@@ -82,25 +102,60 @@ pub fn exp_ta(t: f64, coeffs: &[f64; 8]) -> Result<Mat3, GaugeError> {
         + 2.0 * (v5 * (v3 * v11 - v4 * v12) + v6 * (v3 * v12 + v4 * v11));
     let p3 = cofac / 3.0 - trv3 * trv3;
     let q = trv3 * cofac - det - 2.0 * trv3.powi(3);
+    if [trv3, cofac, det, p3, q]
+        .iter()
+        .any(|value| !value.is_finite())
+    {
+        return Err(numerical_range("Cardano invariants"));
+    }
     let x = (-4.0 * p3).sqrt() + 1e-100;
-    let arg = (q / (x * p3)).clamp(-1.0, 1.0);
+    let denominator = x * p3;
+    if !x.is_finite() || !denominator.is_finite() || denominator == 0.0 {
+        return Err(numerical_range("Cardano denominator"));
+    }
+    let quotient = q / denominator;
+    if !quotient.is_finite() {
+        return Err(numerical_range("Cardano quotient"));
+    }
+    let arg = quotient.clamp(-1.0, 1.0);
     let theta = arg.acos() / 3.0;
     let e1 = x * theta.cos() + trv3;
     let e2 = x * (theta + 2.0 * std::f64::consts::PI / 3.0).cos() + trv3;
     let e3 = 3.0 * trv3 - e1 - e2;
+    if [theta, e1, e2, e3].iter().any(|value| !value.is_finite()) {
+        return Err(numerical_range("Cardano eigenvalues"));
+    }
     let raw = [
         julia_eigenvector(v, e1),
         julia_eigenvector(v, e2),
         julia_eigenvector(v, e3),
     ];
+    if raw.iter().any(|(vector, norm2)| {
+        !norm2.is_finite()
+            || vector
+                .iter()
+                .any(|value| !value.re.is_finite() || !value.im.is_finite())
+    }) {
+        return Err(numerical_range("eigenvector construction"));
+    }
     if raw.iter().any(|(_, norm2)| *norm2 < 1e-24) {
-        return Ok(taylor_four(v));
+        let fallback = taylor_four(v);
+        return finite_matrix(&fallback)
+            .then_some(fallback)
+            .ok_or_else(|| numerical_range("fourth-order fallback"));
     }
     let vectors = raw.map(|(mut vector, norm2)| {
         let scale = norm2.sqrt().recip();
         vector.iter_mut().for_each(|value| *value *= scale);
         vector
     });
+    if vectors
+        .iter()
+        .flatten()
+        .any(|value| !value.re.is_finite() || !value.im.is_finite())
+    {
+        return Err(numerical_range("eigenvector normalization"));
+    }
     let eigenvalues = [e1, e2, e3];
     let mut out = Mat3::zero();
     for row in 0..3 {
@@ -111,6 +166,9 @@ pub fn exp_ta(t: f64, coeffs: &[f64; 8]) -> Result<Mat3, GaugeError> {
                 })
                 .sum();
         }
+    }
+    if !finite_matrix(&out) {
+        return Err(numerical_range("exponential assembly"));
     }
     Ok(out)
 }

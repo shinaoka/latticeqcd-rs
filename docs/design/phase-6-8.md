@@ -376,6 +376,13 @@ Gell-Mann components can cancel in that scalar sum. Balanced-vector fixtures
 use pinned Julia `exp_T4` or `LinearAlgebra.exp` after the same generator
 construction to guard this historical `exptU!` shortcut defect.
 
+Finite input is not sufficient to promise representability of every
+intermediate. The implementation validates scaled coefficients, Cardano
+invariants and denominators, eigenvalues/eigenvectors, fallback powers, and the
+assembled matrix. Arithmetic leaving finite range returns the structured
+`Su3NumericalRange` error. It is never clamped into a plausible value, and
+Phase 8 does not introduce a separate scaling-and-squaring implementation.
+
 This must not be replaced by tenferro `eigh`: tenferro provides decomposition
 but not the required matrix exponential, and exact branch/fallback compatibility
 is part of the Julia oracle. Scalar fixed-size arithmetic stays in `Mat3`.
@@ -433,6 +440,8 @@ performance claim. It does not justify exposing the driver as a public sampler.
   `clear_cache` resets retained entries to zero;
 - injected contraction failure at each direction leaves all four links
   bit-for-bit unchanged;
+- huge finite momentum that overflows site-local exponentiation is rejected
+  before packing/contraction and leaves all four links bit-for-bit unchanged;
 - normalization fixtures cover drift, singular rejection, and non-finite input;
 - HMC checks above pass under a fixed seed without becoming public API;
 - tests demonstrate that batched update reaches tenferro `dot_general` and does

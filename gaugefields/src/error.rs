@@ -67,6 +67,11 @@ pub enum GaugeError {
         operation: &'static str,
         component: usize,
     },
+    #[error("{operation} exceeded finite SU(3) numerical range during {stage}")]
+    Su3NumericalRange {
+        operation: &'static str,
+        stage: &'static str,
+    },
     #[error("SU(3) normalization is singular at row {row}")]
     SingularSu3Normalization { row: usize },
     #[error("{operation} failed in tenferro evolution: {source}")]
