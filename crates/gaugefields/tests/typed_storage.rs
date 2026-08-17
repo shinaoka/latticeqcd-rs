@@ -1,9 +1,8 @@
 use gaugefields::{GaugeError, GaugeLinkTensor, LatticeShape4, TaGaugeField};
 use num_complex::Complex64;
-use std::sync::Arc;
 use tenferro_tensor::{
-    Buffer, BufferHandle, DeviceId, DeviceKind, GpuBackendKind, MemoryKind, Placement, Tensor,
-    TypedTensor,
+    BackendStorageHandle, DeviceId, DeviceKind, GpuBackendKind, MemoryKind, Placement,
+    StorageBuffer, Tensor, TypedTensor,
 };
 
 #[test]
@@ -25,10 +24,13 @@ fn host_only_typed_constructors_return_structured_placement_errors() {
             kind: DeviceKind::Gpu(GpuBackendKind::Cuda),
             ordinal: 0,
         }),
+        cpu_affinity: None,
     };
     let link = TypedTensor::from_buffer_col_major(
         vec![3, 3, 1, 1, 1, 1],
-        Buffer::Backend(Arc::new(BufferHandle::<Complex64>::new_with_len(1, 9))),
+        StorageBuffer::Backend(Box::new(BackendStorageHandle::<Complex64>::new_with_len(
+            1, 9,
+        ))),
         placement.clone(),
     )
     .unwrap();
@@ -40,7 +42,7 @@ fn host_only_typed_constructors_return_structured_placement_errors() {
     let ta = || {
         TypedTensor::from_buffer_col_major(
             vec![8, 1, 1, 1, 1],
-            Buffer::Backend(Arc::new(BufferHandle::<f64>::new_with_len(2, 8))),
+            StorageBuffer::Backend(Box::new(BackendStorageHandle::<f64>::new_with_len(2, 8))),
             placement.clone(),
         )
         .unwrap()
@@ -64,14 +66,28 @@ fn typed_storage_validates_shapes_and_has_compact_debug() {
     assert!(!format!("{link:?}").contains("0.0"));
 
     let ta = TypedTensor::from_vec_col_major(vec![8, 2, 1, 1, 1], vec![0.0; 16]).unwrap();
-    let field = TaGaugeField::new([ta.clone(), ta.clone(), ta.clone(), ta], lattice).unwrap();
+    let field = TaGaugeField::new(
+        [
+            ta.duplicate().unwrap(),
+            ta.duplicate().unwrap(),
+            ta.duplicate().unwrap(),
+            ta,
+        ],
+        lattice,
+    )
+    .unwrap();
     assert_eq!(field.tensors()[0].shape(), &[8, 2, 1, 1, 1]);
     assert!(!format!("{field:?}").contains("0.0"));
 
     let wrong = TypedTensor::from_vec_col_major(vec![8, 2], vec![0.0; 16]).unwrap();
     assert!(matches!(
         TaGaugeField::new(
-            [wrong.clone(), wrong.clone(), wrong.clone(), wrong],
+            [
+                wrong.duplicate().unwrap(),
+                wrong.duplicate().unwrap(),
+                wrong.duplicate().unwrap(),
+                wrong,
+            ],
             lattice
         ),
         Err(GaugeError::Rank {

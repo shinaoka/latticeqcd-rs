@@ -176,7 +176,7 @@ fn nc2_is_rejected_before_zero_or_nonzero_update_without_mutation() -> Result<()
     )?;
     for t in [0.0, 0.25] {
         let mut field = GaugeLinks::new(std::array::from_fn(|mu| {
-            GaugeLinkTensor::from_typed(links[mu].typed().clone(), lattice).unwrap()
+            GaugeLinkTensor::from_typed(links[mu].typed().duplicate().unwrap(), lattice).unwrap()
         }))?;
         let before: [Vec<_>; 4] =
             std::array::from_fn(|mu| field.links()[mu].typed().host_data().unwrap().to_vec());

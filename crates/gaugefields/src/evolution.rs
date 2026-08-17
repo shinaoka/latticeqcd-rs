@@ -340,7 +340,17 @@ where
                 .map_err(|source| evolution_error("exp_ta_update pack", source))?,
         ));
     }
-    let rhs: [Tensor; 4] = std::array::from_fn(|mu| Tensor::C64(links.links()[mu].typed().clone()));
+    let rhs: [Tensor; 4] = (0..4)
+        .map(|mu| {
+            links.links()[mu]
+                .typed()
+                .duplicate()
+                .map(Tensor::C64)
+                .map_err(|source| evolution_error("exp_ta_update input", source))
+        })
+        .collect::<std::result::Result<Vec<_>, GaugeError>>()?
+        .try_into()
+        .map_err(|_| GaugeError::Tensor("exp_ta_update expected four links".into()))?;
     let config = DotGeneralConfig {
         lhs_contracting_dims: vec![1],
         rhs_contracting_dims: vec![0],

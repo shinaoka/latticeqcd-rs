@@ -27,8 +27,9 @@ JVP containing only tangent slots for active link directions. Its scalar is
 `Re sum_mu sum_i conj(G_mu[i]) delta_U_mu[i]`. Linear transpose consumes any
 finite real scalar cotangent `c` and returns `c G_mu` for active directions
 through the Wilson force extension. Applications explicitly attach `ad_rules()`
-to their own `AdContext` and separately attach `register_runtime` to their
-executor. There is no direct action VJP or force AD rule; higher-order
+to their own `AdContext` through `with_semantic_extension_rules`. They separately install all three
+`runtime_modules::<CpuBackend>()` values into their application-owned
+`Runtime` using the selected `EngineId`. There is no direct action VJP or force AD rule; higher-order
 differentiation through force is intentionally unsupported.
 
 Julia parity uses `1e-13` maximum component error because each component is a
@@ -44,8 +45,8 @@ A shared site-local `Mat3` staple helper feeds exact-capacity final buffers:
 `gauge_force` writes coefficient tensors directly and never materializes a
 staple, `dsdu` field, or volume-sized neighbor table.
 
-Independent unresolved graph placeholders still cannot express cross-input
-shape equality constraints; this is tracked by
-[tenferro-rs #1370](https://github.com/tensor4all/tenferro-rs/issues/1370).
-Known contradictions fail graph construction, while executor and host-reference
-validation enforce exact concrete equality.
+`ExtensionShapeContext` records cross-input shape-equality constraints for
+extension inputs. The Wilson extension records equality for all four links;
+graph construction and concrete runtime validation reject contradictions.
+Known contradictions fail graph construction, while runtime preparation and
+payload validation enforce exact concrete equality.

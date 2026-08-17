@@ -1,11 +1,11 @@
 #![cfg(feature = "autodiff")]
 
-use gaugefields::{ad_rules, wilson_action_traced};
+use gaugefields::{ad_rules, runtime_modules, wilson_action_traced};
 use num_complex::Complex64;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use tenferro_ad::AdContext;
-use tenferro_cpu::CpuBackend;
-use tenferro_runtime::{GraphCompiler, GraphExecutor, TracedTensor};
+use tenferro_cpu::{runtime_engine_id, runtime_engine_registration, CpuBackend};
+use tenferro_runtime::{GraphCompiler, Runtime, TracedTensor};
 
 fn links() -> [TracedTensor; 4] {
     std::array::from_fn(|mu| {
@@ -21,13 +21,28 @@ fn links() -> [TracedTensor; 4] {
 
 fn context() -> AdContext {
     AdContext::builder()
-        .with_extension_rules(ad_rules().unwrap())
+        .with_semantic_extension_rules(ad_rules().unwrap())
+        .unwrap()
         .build()
         .unwrap()
 }
 
+fn runtime(install_modules: bool) -> Runtime {
+    let backend = CpuBackend::new();
+    let mut builder = Runtime::builder();
+    builder
+        .register_engine(runtime_engine_registration(&backend).unwrap())
+        .unwrap();
+    if install_modules {
+        for module in runtime_modules::<CpuBackend>(runtime_engine_id().unwrap()).unwrap() {
+            builder.install_extension_module(module).unwrap();
+        }
+    }
+    builder.build().unwrap()
+}
+
 #[test]
-fn missing_runtime_and_missing_rules_are_distinct_without_panicking() {
+fn missing_extension_module_and_missing_rules_are_distinct_without_panicking() {
     let links = links();
     let action = wilson_action_traced([&links[0], &links[1], &links[2], &links[3]], 5.7).unwrap();
     let tangent = TracedTensor::from_vec_col_major(
@@ -43,21 +58,28 @@ fn missing_runtime_and_missing_rules_are_distinct_without_panicking() {
             .jvp(&action, &links[0], &tangent)
     }));
     assert!(missing_rules.is_ok());
-    let missing_rules = missing_rules.unwrap().unwrap_err().to_string();
-    assert!(missing_rules.contains("gaugefields.wilson_action.v1"));
+    let missing_rules = missing_rules.unwrap().unwrap_err();
+    assert!(matches!(
+        missing_rules,
+        tenferro_runtime::Error::UnsupportedAdRule { ref op, .. }
+            if op == "gaugefields.wilson_action.v1"
+    ));
 
     let jvp = context().jvp(&action, &links[0], &tangent).unwrap();
     let program = GraphCompiler::new().compile(&jvp).unwrap();
-    let missing_runtime = catch_unwind(AssertUnwindSafe(|| {
-        GraphExecutor::new(CpuBackend::new()).run(&program)
+    let missing_module = catch_unwind(AssertUnwindSafe(|| {
+        runtime(false).run_compiled(&program, &[])
     }));
-    assert!(missing_runtime.is_ok());
-    let missing_runtime = missing_runtime.unwrap().unwrap_err().to_string();
-    assert!(
-        missing_runtime.contains("missing runtime"),
-        "{missing_runtime}"
-    );
-    assert_ne!(missing_rules, missing_runtime);
+    assert!(missing_module.is_ok());
+    let missing_module = missing_module.unwrap().unwrap_err();
+    let missing_module_message = missing_module.to_string();
+    assert!(matches!(
+        &missing_module,
+        tenferro_runtime::Error::Unsupported { .. }
+            | tenferro_runtime::Error::RuntimeState { .. }
+            | tenferro_runtime::Error::RuntimeStateSource { .. }
+    ));
+    assert!(missing_module_message.contains("gaugefields.wilson_action_jvp.v1"));
 }
 
 #[test]
@@ -95,7 +117,10 @@ fn higher_order_force_differentiation_is_typed_unsupported_without_panicking() {
     .unwrap();
     let result = catch_unwind(AssertUnwindSafe(|| ad.jvp(&gradient, &links[0], &tangent)));
     assert!(result.is_ok());
-    let error = result.unwrap().unwrap_err().to_string();
-    assert!(error.contains("gaugefields.wilson_force.v1"), "{error}");
-    assert!(error.contains("unsupported"), "{error}");
+    let error = result.unwrap().unwrap_err();
+    assert!(matches!(
+        error,
+        tenferro_runtime::Error::UnsupportedAdRule { ref op, .. }
+            if op == "gaugefields.wilson_force.v1"
+    ));
 }

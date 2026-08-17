@@ -7,7 +7,7 @@ repository.workspace = true
 
 [features]
 default = []
-autodiff = ["dep:tenferro-ad", "dep:tenferro-internal-ops", "dep:computegraph", "dep:tidu"]
+autodiff = ["dep:tenferro-ad"]
 
 [dependencies]
 num-complex.workspace = true
@@ -19,9 +19,7 @@ tenferro-tensor.workspace = true
 tenferro-runtime.workspace = true
 tenferro-cpu.workspace = true
 tenferro-ad = { workspace = true, optional = true }
-tenferro-internal-ops = { workspace = true, optional = true }
-computegraph = { workspace = true, optional = true }
-tidu = { workspace = true, optional = true }
+tenferro-internal-ops.workspace = true
 
 [dev-dependencies]
 rand = "0.8"

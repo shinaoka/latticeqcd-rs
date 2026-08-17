@@ -1,6 +1,9 @@
 # Repository Rules
 
-These rules apply on top of the shared tensor4all rules. They are adapted from
+These rules apply on top of the shared tensor4all rules. The migration design
+and worklog are the source of truth for the current tenferro compatibility
+boundary; keep this branch synchronized with its declared base before opening a
+PR. They are adapted from
 `tenferro-rs/REPOSITORY_RULES.md` for this downstream gauge-field library; rules
 about tenferro's own internal crates, GPU/FFI implementation, and provider
 selection are intentionally not copied.
@@ -36,7 +39,15 @@ selection are intentionally not copied.
 - Keep algorithm, graph, extension, and AD layers free of `unsafe`. A future
   backend/FFI leaf is the only acceptable owner of required unsafe code.
 
-## Tensor And Runtime Boundaries
+## Dependencies And Runtime Boundaries
+
+- Pin every direct tenferro dependency to the same exact fetched `origin/main`
+  revision. Update all five declarations and `Cargo.lock` atomically; never use
+  a moving branch or retain compatibility shims for another revision.
+- Build traced programs with `GraphCompiler`, execute them through an
+  application-owned `Runtime`, and install every required `ExtensionModule`
+  explicitly. Register the backend engine and extension planning/configuration
+  once per runtime owner; there is no silent extension fallback.
 
 - Use `TypedTensor<T>` or typed borrowed views for validated internal numeric
   storage and kernels. Use dynamic `Tensor` only at dtype-erased tenferro ABI
@@ -61,12 +72,15 @@ selection are intentionally not copied.
 ## Extension And AD Rules
 
 - Each extension family owns stable family/version metadata, shared validation,
-  shape inference, a host reference runtime, and explicit registration.
-- Extension AD rules belong to an explicit `tenferro_ad::AdContext` or rule set,
-  never a process-global registry.
-- Follow tenferro's graph-level role split: `linearize` emits the JVP operation;
-  transposing that linear operation emits the force/VJP operation. Do not add a
-  second value/tape-level AD model.
+  shape inference, declared pure effects/fresh-output aliases, a host reference
+  module, and explicit runtime installation.
+- Prepared extension plans retain the payload, specialization, and backend
+  binding; execution uses the runtime-owned backend session and returns typed
+  placement or payload errors. Do not construct a backend or fallback path in an
+  operation call.
+- Extension AD rules belong to an explicit `tenferro_ad::AdContext` semantic
+  rule set, never a process-global registry. `linearize` emits the JVP operation;
+  linear transpose of the primal action emits the force/VJP operation.
 - Every supported AD rule requires numerical oracle coverage. Prefer an
   independent Julia reference plus finite differences; at minimum require
   finite differences and manifest/registration coverage.
@@ -86,7 +100,7 @@ selection are intentionally not copied.
 - Performance claims require release-mode measurements over representative
   lattice sizes. Numerical tests report a useful maximum or norm residual.
 
-## Tests And Documentation
+## Validation And Documentation
 
 - Public behavior belongs in integration tests. Keep production files focused;
   prefer module-local `src/<module>/tests/*.rs` for private unit tests, leaving
@@ -100,6 +114,7 @@ selection are intentionally not copied.
   implementation PRs also leave a concise reviewer-facing record under
   `docs/worklogs/` containing sources consulted, decisions, verification, and
   remaining risks. Work logs are not raw transcripts.
-- Before completion, run formatting, linting, unit/integration tests, doctests,
-  and any relevant source-contract checks. Record exact verification commands
-  in the PR work log.
+- Before completion, run formatting, default and all-feature checks/tests,
+  CI-parity clippy, doctests, docs, the traced runtime smoke test, and relevant
+  source-contract checks. Record exact verification commands and results in the
+  PR work log; preserve numerical tolerances and report residuals.
