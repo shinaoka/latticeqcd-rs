@@ -19,7 +19,7 @@ fn execute(tensor: &TracedTensor) -> tenferro_tensor::Tensor {
 #[test]
 fn reverse_mode_matches_every_direct_gradient_and_arbitrary_seed() {
     let fixture =
-        load_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2"))
+        load_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/random_2x2x2x2"))
             .unwrap();
     let beta = fixture.metadata().beta;
     let expected = action_gradient(fixture.links(), beta).unwrap();

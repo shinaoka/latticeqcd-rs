@@ -15,7 +15,7 @@ fn assert_bitwise_eq(actual: Mat3, expected: Mat3) {
 
 #[test]
 fn normalization_matches_pinned_julia_oracles() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/normalize_su3");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/normalize_su3");
     let metadata: Value =
         serde_json::from_slice(&fs::read(dir.join("metadata.json")).unwrap()).unwrap();
     assert_eq!(metadata["gaugefields_jl_commit"], JULIA_COMMIT);

@@ -3,7 +3,7 @@ use num_complex::Complex64;
 use std::{fs, path::Path};
 
 fn fixture_dir() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/random_2x2x2x2")
 }
 
 fn fixture() -> Fixture {

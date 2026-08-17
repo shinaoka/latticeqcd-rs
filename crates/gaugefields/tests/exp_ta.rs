@@ -8,7 +8,7 @@ const JULIA_COMMIT: &str = "9e5719970770f4497405a856315c90bef7f74449";
 
 #[test]
 fn julia_exp_ta_fixture_has_branch_provenance() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/exp_ta");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/exp_ta");
     let metadata: Value =
         serde_json::from_slice(&fs::read(dir.join("metadata.json")).unwrap()).unwrap();
     assert_eq!(metadata["gaugefields_jl_commit"], JULIA_COMMIT);
@@ -39,7 +39,7 @@ fn julia_exp_ta_fixture_has_branch_provenance() {
 
 #[test]
 fn exp_ta_matches_julia_branches_and_su3_invariants() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/exp_ta");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/exp_ta");
     let metadata: Value =
         serde_json::from_slice(&fs::read(dir.join("metadata.json")).unwrap()).unwrap();
     let bytes = fs::read(dir.join("expected.npy")).unwrap();

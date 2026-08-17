@@ -4,7 +4,7 @@ use std::{fs, path::Path};
 
 #[test]
 fn direct_neighbor_reads_match_all_julia_materialized_shifts() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/shifts_3x2x4x5");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/shifts_3x2x4x5");
     let fixture = load_fixture(&dir).unwrap();
     let links = fixture.links();
     for link_mu in 0..4 {

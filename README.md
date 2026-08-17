@@ -1,4 +1,4 @@
-# gaugefields-rs
+# latticeqcd-rs
 
 CPU-first lattice gauge fields backed by tenferro tensors.
 

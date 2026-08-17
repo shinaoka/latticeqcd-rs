@@ -223,7 +223,7 @@ fn host_reference_rejects_exact_link_shape_mismatch_without_panicking() {
 
 fn random_fixture_links() -> crate::GaugeLinks {
     let fixture = crate::load_fixture(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/random_2x2x2x2"),
     )
     .unwrap();
     let lattice = fixture.links().lattice();

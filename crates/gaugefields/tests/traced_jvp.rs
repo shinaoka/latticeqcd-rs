@@ -121,7 +121,7 @@ fn perturbed(base: &GaugeLinks, mu: usize, tangent: &[Complex64], scale: f64) ->
 #[test]
 fn jvp_matches_finite_difference_sweep_and_gradient_inner_product() {
     let fixture =
-        load_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2"))
+        load_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/random_2x2x2x2"))
             .unwrap();
     let beta = fixture.metadata().beta;
     let base = fixture.links();

@@ -19,7 +19,7 @@ fn parity_rejects_nan() {
 fn julia_dsdu_and_ta_force_match_all_components() {
     for name in ["random_2x2x2x2", "random_4x4x4x4"] {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures")
+            .join("../../fixtures")
             .join(name);
         let f = load_fixture(&dir).unwrap();
         let d = dsdu(f.links(), f.metadata().beta).unwrap();

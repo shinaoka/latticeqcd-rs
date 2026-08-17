@@ -100,7 +100,7 @@ fn registered_host_runtime_rejects_backend_links_without_panicking() {
 #[test]
 fn traced_action_requires_registration_and_matches_direct_fixture() {
     let fixture =
-        load_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2"))
+        load_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/random_2x2x2x2"))
             .unwrap();
     let shape = [3, 3, 2, 2, 2, 2];
     let traced = traced_inputs(&shape);

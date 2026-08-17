@@ -105,7 +105,7 @@ fn reader_rejects_order_dtype_rank_shape_mu_and_metadata() {
 
 #[test]
 fn checked_julia_cold_fixture_loads_with_exact_provenance() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/cold_1x1x1x1");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/cold_1x1x1x1");
     let fixture = load_fixture(path).unwrap();
     assert_eq!(fixture.metadata().gaugefields_jl_version, "0.7.2");
     assert_eq!(fixture.metadata().gaugefields_jl_commit.len(), 40);
@@ -147,7 +147,7 @@ fn nc2_fixture_loads_but_su3_boundary_rejects_it() {
 
 #[test]
 fn checked_julia_random_fixture_preserves_every_mu_axis_and_value() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/random_2x2x2x2");
     let fixture = load_fixture(path).unwrap();
     let reference = fixture.metadata().reference_bits.as_ref().unwrap();
     let normalized = fixture.metadata().expected_observables["normalized_plaquette"]

@@ -40,7 +40,7 @@ fn cold_force_quantities_have_expected_shapes_and_values() {
 #[test]
 fn nonzero_force_coefficients_match_independent_local_ta_formula() {
     let f = gaugefields::load_fixture(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/random_2x2x2x2"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/random_2x2x2x2"),
     )
     .unwrap();
     let d = dsdu(f.links(), f.metadata().beta).unwrap();

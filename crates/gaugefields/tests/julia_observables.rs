@@ -16,7 +16,7 @@ fn residual(a: f64, b: f64) -> f64 {
 fn julia_random_observables_and_staples_match() {
     for name in ["random_2x2x2x2", "random_4x4x4x4"] {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures")
+            .join("../../fixtures")
             .join(name);
         let f = load_fixture(&dir).unwrap();
         let e = &f.metadata().expected_observables;
