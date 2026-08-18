@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-/// Validation and fixture-loading failures.
+/// Gauge-field, HMC, heatbath, fixture, runtime, and RNG-state failures.
 #[derive(Debug, thiserror::Error)]
 pub enum GaugeError {
+    #[error("reproducible RNG state must not be all zero")]
+    InvalidRngState,
     #[error("lattice extent on axis {axis} must be positive")]
     InvalidExtent { axis: usize },
     #[error("lattice volume overflows usize")]
@@ -62,6 +64,38 @@ pub enum GaugeError {
     },
     #[error("beta must be finite, found {found}")]
     NonFiniteBeta { found: f64 },
+    #[error("heatbath beta must be positive, found {found}")]
+    NonPositiveHeatbathBeta { found: f64 },
+    #[error("heatbath requires at least one rejection attempt")]
+    ZeroHeatbathAttempts,
+    #[error("heatbath requires an even extent on axis {axis}, found {extent}")]
+    OddHeatbathExtent { axis: usize, extent: usize },
+    #[error(
+        "heatbath staple is singular at direction {direction}, site {site}, subgroup {subgroup}"
+    )]
+    SingularHeatbathStaple {
+        direction: usize,
+        site: usize,
+        subgroup: usize,
+    },
+    #[error("heatbath exceeded finite numerical range during {stage}")]
+    HeatbathNumericalRange { stage: &'static str },
+    #[error("heatbath rejection limit exhausted after {max_attempts} attempts")]
+    HeatbathRejectionLimit { max_attempts: usize },
+    #[error("HMC step size must be finite, found {found}")]
+    NonFiniteStepSize { found: f64 },
+    #[error("HMC step size must be positive, found {found}")]
+    NonPositiveStepSize { found: f64 },
+    #[error("HMC requires at least one leapfrog step")]
+    ZeroHmcSteps,
+    #[error("HMC momentum at direction {mu}, component {component} is non-finite")]
+    NonFiniteMomentum { mu: usize, component: usize },
+    #[error("HMC kinetic-energy square sum exceeded finite range")]
+    KineticNumericalRange,
+    #[error("HMC Hamiltonian is non-finite")]
+    NonFiniteHamiltonian,
+    #[error("HMC Hamiltonian difference is non-finite")]
+    NonFiniteHamiltonianDelta,
     #[error("{operation} received non-finite SU(3) input at component {component}")]
     NonFiniteSu3Input {
         operation: &'static str,

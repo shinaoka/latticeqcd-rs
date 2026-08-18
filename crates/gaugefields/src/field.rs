@@ -227,6 +227,34 @@ impl GaugeLinks {
     }
 }
 
+pub(crate) fn duplicate_links(links: &GaugeLinks) -> Result<GaugeLinks, GaugeError> {
+    let values = 9usize
+        .checked_mul(links.lattice().nv())
+        .ok_or(GaugeError::AllocationOverflow)?;
+    let bytes = values
+        .checked_mul(std::mem::size_of::<Complex64>())
+        .ok_or(GaugeError::AllocationOverflow)?;
+    if bytes > isize::MAX as usize {
+        return Err(GaugeError::AllocationOverflow);
+    }
+    let lattice = links.lattice();
+    let copies =
+        (0..4)
+            .map(|mu| {
+                let tensor = links.links()[mu].typed().duplicate().map_err(|source| {
+                    GaugeError::Evolution {
+                        operation: "GaugeLinks duplicate",
+                        source,
+                    }
+                })?;
+                GaugeLinkTensor::from_typed(tensor, lattice)
+            })
+            .collect::<Result<Vec<_>, GaugeError>>()?
+            .try_into()
+            .map_err(|_| GaugeError::Tensor("GaugeLinks require four tensors".into()))?;
+    GaugeLinks::new(copies)
+}
+
 /// Validates the boundary before entering any fixed-size SU(3) kernel.
 pub fn require_su3(links: &GaugeLinks) -> Result<(), GaugeError> {
     if links.nc() == 3 {

@@ -8,12 +8,13 @@ mod extension;
 mod field;
 mod fixture;
 mod force;
-#[cfg(test)]
-mod hmc_test_support;
+mod heatbath;
+mod hmc;
 mod index;
 mod kernel;
 mod mat3;
 mod observables;
+mod rng;
 
 #[cfg(feature = "autodiff")]
 pub use ad::ad_rules;
@@ -25,6 +26,12 @@ pub use field::{
 };
 pub use fixture::{load_fixture, Fixture, FixtureMetadata};
 pub use force::{action_gradient, dsdu, gauge_force};
+pub use heatbath::{heatbath_sweep, HeatbathParams, HeatbathSweepStats};
+pub use hmc::{
+    hamiltonian, hmc_update, kinetic_energy, leapfrog_trajectory, sample_momentum, HmcOutcome,
+    HmcParams,
+};
 pub use index::{coords_from_site_index, load_link, neighbor_site, site_index, store_link};
 pub use mat3::Mat3;
 pub use observables::{measurement_staple, normalized_plaquette, plaquette_sum, wilson_action};
+pub use rng::ReproducibleRng;

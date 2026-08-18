@@ -2,6 +2,14 @@
 
 CPU-first lattice gauge fields backed by tenferro tensors.
 
+## Attribution and license
+
+The `gaugefields` crate ports algorithms and conventions from
+[Gaugefields.jl](https://github.com/shinaoka/Gaugefields.jl), distributed under
+the MIT License. Copyright (c) 2022 Akio Tomiya and Yuki Nagai. The original
+notice is preserved in [`crates/gaugefields/LICENSE`](crates/gaugefields/LICENSE),
+and pinned source revisions are recorded with each Julia oracle.
+
 ## Compatibility policy
 
 This development line follows `tenferro-rs` `origin/main`, but every Cargo Git
@@ -13,6 +21,39 @@ full feature matrix is rebuilt, and fixture/layout tests are rerun.
 Until the API stabilizes, compatibility is clean-break rather than emulation:
 gaugefields-rs targets its recorded tenferro revision and does not carry shims
 for older or newer tenferro APIs.
+
+## Reproducible random streams
+
+`ReproducibleRng` imports Julia's four-word `(s0, s1, s2, s3)` xoshiro256++
+state in little-endian order. With Julia 1.12.5, dump those 256 state bits
+before drawing values:
+
+```julia
+using Random
+rng = Xoshiro(123)
+state = (rng.s0, rng.s1, rng.s2, rng.s3)
+@show state
+```
+
+Pass the four printed `UInt64` words to Rust in the same order. The Rust wrapper
+exposes the raw `RngCore` stream, the exact open-unit mapping, and an uncached
+Box--Muller normal stream:
+
+```rust
+use gaugefields::ReproducibleRng;
+use rand::RngCore;
+
+let mut rng = ReproducibleRng::from_state([1, 2, 3, 4])?;
+assert_eq!(rng.next_u64(), 41_943_041);
+let mut normals = [0.0; 3];
+rng.fill_standard_normals(&mut normals);
+assert!(normals.into_iter().all(f64::is_finite));
+# Ok::<(), gaugefields::GaugeError>(())
+```
+
+An odd normal-fill length discards the final sine result and still consumes a
+complete pair. All-zero states are rejected; state replacement is transactional.
+There is no global RNG or hidden state export.
 
 ## Direct and traced Wilson action
 
@@ -89,5 +130,75 @@ The context reuses its backend, buffer pool, and bounded runtime cache. Stable
 slots `0..3` identify the four directions, and all outputs are validated before
 the links are replaced. Cache entry counts are provider-dependent: the pinned
 cpu-faer unconjugated strided path reports zero retained analysis entries even
-though it uses the same cached session and stable slots. No HMC sampler is
-public; HMC appears only as deterministic crate-private regression support.
+though it uses the same cached session and stable slots.
+
+## Quenched SU(3) heatbath
+
+The host-only Wilson heatbath owns no global state: callers provide validated
+parameters and a Julia-compatible four-word RNG. A sweep follows directions
+`0..3`, even sites before odd sites, and the fixed SU(2) subgroup order
+`(0,1)`, `(1,2)`, `(0,2)`:
+
+```rust
+use gaugefields::{
+    cold_su3, heatbath_sweep, normalized_plaquette, HeatbathParams, LatticeShape4,
+    ReproducibleRng,
+};
+
+# fn run() -> Result<(), gaugefields::GaugeError> {
+let lattice = LatticeShape4::new([2, 2, 2, 2])?;
+let mut links = cold_su3(lattice)?;
+let mut rng = ReproducibleRng::from_state([1, 2, 3, 4])?;
+let params = HeatbathParams::new(5.7, 100_000)?;
+let stats = heatbath_sweep(&mut links, params, &mut rng)?;
+println!(
+    "updated={} attempts={} plaquette={}",
+    stats.updated_links,
+    stats.su2_attempts,
+    normalized_plaquette(&links)?,
+);
+# Ok(())
+# }
+```
+
+The update is transactional for link storage and reports total SU(2) rejection
+iterations. It intentionally uses the reviewed open-uniform and square-root
+SU(2) normalization corrections rather than promising bitwise trajectory parity
+with Gaugefields.jl. Regenerate the pinned three-beta statistical oracle with
+`GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia --startup-file=no fixtures/generate.jl heatbath_statistics`.
+Its metadata records all block means, independent Julia seeds, provenance,
+schedule, and the fixed six-standard-error comparison criterion. See
+`examples/quenched_heatbath.rs` for a runnable loop.
+
+## Quenched SU(3) HMC
+
+HMC is a fixed-step, CPU-first SU(3) API. The caller owns the evolution context
+and explicitly imports the four-word Julia-compatible RNG state:
+
+```rust
+use gaugefields::{
+    cold_su3, hmc_update, normalized_plaquette, CpuEvolutionContext, HmcParams,
+    LatticeShape4, ReproducibleRng,
+};
+use tenferro_cpu::CpuBackend;
+
+# fn run() -> Result<(), gaugefields::GaugeError> {
+let lattice = LatticeShape4::new([4, 4, 4, 4])?;
+let mut links = cold_su3(lattice)?;
+let mut context = CpuEvolutionContext::new(CpuBackend::new());
+let params = HmcParams::new(5.7, 0.01, 4)?;
+let mut rng = ReproducibleRng::from_state([1, 2, 3, 4])?;
+let mut accepted = 0;
+for _ in 0..3 {
+    accepted += usize::from(hmc_update(&mut context, &mut links, params, &mut rng)?.accepted);
+}
+println!("accepted={accepted}/3 plaquette={}", normalized_plaquette(&links)?);
+# Ok(())
+# }
+```
+
+Each update uses the exact U-P-U trajectory and an unconditional open-unit
+Metropolis draw. Link and momentum inputs are transactional on trajectory
+failure; rejected proposals restore all links. RNG advancement is not rolled
+back: errors consume only draws completed before the error. Adaptation, alternate
+actions, and device-resident HMC are not part of this API.

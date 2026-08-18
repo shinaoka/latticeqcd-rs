@@ -4,11 +4,13 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/shinaoka/latticeqcd-rs"
 
 [workspace.dependencies]
 num-complex = "0.4"
+rand = { version = "0.8", default-features = false }
+rand_xoshiro = "0.6"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
