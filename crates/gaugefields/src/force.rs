@@ -4,7 +4,11 @@ use crate::{
 };
 use num_complex::Complex64 as C;
 use tenferro_tensor::TypedTensor;
-fn checked_count(items_per_site: usize, nv: usize, item_size: usize) -> Result<usize, GaugeError> {
+pub(crate) fn checked_count(
+    items_per_site: usize,
+    nv: usize,
+    item_size: usize,
+) -> Result<usize, GaugeError> {
     let count = items_per_site
         .checked_mul(nv)
         .ok_or(GaugeError::AllocationOverflow)?;

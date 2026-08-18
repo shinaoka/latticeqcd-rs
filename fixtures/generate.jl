@@ -1,8 +1,8 @@
 import Pkg
 import Random
 
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"])
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"])
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -331,6 +331,74 @@ end
 
 if ARGS == ["wilsonloop_task_b"]
     generate_wilsonloop_task_b()
+    exit()
+end
+
+const STOUT_TASK_C_GAUGEFIELDS_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
+const STOUT_TASK_C_RHOS = (0.12, -0.07)
+const STOUT_TASK_C_LATTICE = (2, 2, 2, 2)
+const STOUT_TASK_C_TOLERANCE = 5e-12
+
+function generate_stout_task_c()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == STOUT_TASK_C_GAUGEFIELDS_COMMIT ||
+        error("expected Gaugefields.jl commit $STOUT_TASK_C_GAUGEFIELDS_COMMIT, found $COMMIT")
+    lattice = STOUT_TASK_C_LATTICE
+    links = Initialize_Gaugefields(NC, 0, lattice...; condition="hot", randomnumber="Reproducible")
+    distinguish_reproducible_directions!(links)
+    out = joinpath(@__DIR__, "stout_task_c")
+    mkpath(out)
+    for mu in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(mu - 1).npy"), links[mu].U)
+    end
+
+    labels = ("plus", "minus")
+    for (rho, label) in zip(STOUT_TASK_C_RHOS, labels)
+        # This is the pinned Gaugefields.jl one-layer, plaquette-only path:
+        # STOUT_Layer -> CovNeuralnet -> calc_smearedU -> forward! -> calc_C!.
+        layer = STOUT_Layer(["plaquette"], [rho], links)
+        network = CovNeuralnet(links)
+        push!(network, layer)
+        smeared, _, _ = calc_smearedU(links, network)
+        for mu in 1:4
+            maximum(abs.(smeared[mu].U .- links[mu].U)) > 1e-8 ||
+                error("stout output is trivial for rho=$rho, direction=$mu")
+            NPZ.npzwrite(joinpath(out, "stout_$(label)$(mu - 1).npy"), smeared[mu].U)
+        end
+    end
+
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n")
+        print(io, "  \"schema\": \"stout_task_c.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"condition\": \"hot\",\n")
+        print(io, "  \"randomnumber\": \"Reproducible\",\n")
+        print(io, "  \"direction_disambiguation\": \"direction mu is periodically shifted by +1 along axis mu\",\n")
+        print(io, "  \"gaugefields_jl\": {\"package\": \"Gaugefields.jl\", \"version\": \"$VERSION\", \"commit\": \"$COMMIT\", \"clean\": true},\n")
+        print(io, "  \"wilsonloop_jl\": {\"package\": \"Wilsonloop.jl\", \"version\": \"$WILSONLOOP_VERSION\", \"commit\": \"$WILSONLOOP_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"source_urls\": [\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/smearing/stout_fast.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/smearing/stout_dataset.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/smearing/Abstractsmearing.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/Wilsonloop.jl/blob/$WILSONLOOP_COMMIT/src/Wilsonloop.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/test/HMCstout_test_nowing.jl\"\n")
+        print(io, "  ],\n")
+        print(io, "  \"source_functions\": [\"STOUT_Layer\", \"CovNeuralnet\", \"calc_smearedU\", \"apply_smearing_U\", \"apply_neuralnet!\", \"forward!\", \"calc_C!\", \"STOUT_dataset\", \"make_Cμ\", \"HMCstout_test_nowing\"],\n")
+        print(io, "  \"rhos\": {\"positive\": 0.12, \"negative\": -0.07},\n")
+        print(io, "  \"convention\": \"C_mu=rho*positive six-term plaquette staple; Omega=C_mu*U_mu†; Q=TA(Omega); Uprime=exp(Q)*U_mu\",\n")
+        print(io, "  \"routine_order\": \"one isotropic plaquette-only layer, all four directions evaluated from the unchanged input before output storage\",\n")
+        print(io, "  \"layout\": {\"links\": \"ComplexF64 Fortran [row,column,x,y,z,t]\", \"site_order\": \"x fastest\"},\n")
+        print(io, "  \"files\": [\"u0.npy\", \"u1.npy\", \"u2.npy\", \"u3.npy\", \"stout_plus0.npy\", \"stout_plus1.npy\", \"stout_plus2.npy\", \"stout_plus3.npy\", \"stout_minus0.npy\", \"stout_minus1.npy\", \"stout_minus2.npy\", \"stout_minus3.npy\"],\n")
+        print(io, "  \"comparison\": {\"field_max_abs_tolerance\": 5e-12, \"criterion\": \"maximum absolute complex-component residual over every direction/site/row/column\"},\n")
+        print(io, "  \"update\": \"all links use one unchanged input snapshot\",\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"stout_task_c\", \"oracle_only\": true}\n")
+        print(io, "}\n")
+    end
+end
+
+if ARGS == ["stout_task_c"]
+    generate_stout_task_c()
     exit()
 end
 
@@ -779,3 +847,4 @@ generate_normalize_su3()
 generate_heatbath_statistics()
 generate_ildg_fixture()
 generate_wilsonloop_task_b()
+generate_stout_task_c()

@@ -84,6 +84,8 @@ pub enum GaugeError {
     },
     #[error("beta must be finite, found {found}")]
     NonFiniteBeta { found: f64 },
+    #[error("stout rho must be finite, found {found}")]
+    NonFiniteRho { found: f64 },
     #[error("heatbath beta must be positive, found {found}")]
     NonPositiveHeatbathBeta { found: f64 },
     #[error("heatbath requires at least one rejection attempt")]

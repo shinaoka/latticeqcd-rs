@@ -211,7 +211,27 @@ impl<'a> HostGaugeLinks<'a> {
         Ok(staple)
     }
 
-    pub(crate) fn force_staple(&self, site: usize, mu: usize) -> Result<Mat3, GaugeError> {
+    /// Returns the unweighted positive six-term plaquette staple at one link.
+    ///
+    /// The result is `sum_nu (U_nu(x) U_mu(x+nu) U_nu(x+mu)† +
+    /// U_nu(x-nu)† U_mu(x-nu) U_nu(x-nu+mu))` for `nu != mu`. It contains
+    /// neither a Wilson coupling nor an action-gradient minus sign.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for an invalid direction, site, or validated host
+    /// matrix block.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gaugefields::{cold_su3, LatticeShape4};
+    ///
+    /// let links = cold_su3(LatticeShape4::new([1, 1, 1, 1])?)?;
+    /// assert_eq!(links.host_view()?.force_staple(0, 0)?.trace().re, 18.0);
+    /// # Ok::<(), gaugefields::GaugeError>(())
+    /// ```
+    pub fn force_staple(&self, site: usize, mu: usize) -> Result<Mat3, GaugeError> {
         let mut staple = Mat3::zero();
         for nu in 0..4 {
             if nu != mu {

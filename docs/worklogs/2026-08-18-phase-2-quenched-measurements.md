@@ -1,6 +1,6 @@
 # Phase 2 quenched measurements worklog
 
-Status: Task B complete; Task C implementation pending
+Status: Task C complete; Task D implementation pending
 
 ## Base and scope
 
@@ -53,7 +53,7 @@ Result: 123 passed, 1 ignored, including 15 doctests.
 |---|---|---|---|---|
 | A: host view and ILDG | Phase 2 design, Task A | reviewer-flash | Correct-to-merge | Correct-to-merge |
 | B: Wilson paths/actions/force | Phase 2 design, Task B | reviewer-flash | Correct-to-merge | Correct-to-merge |
-| C: stout | Phase 2 design, Task C | reviewer-flash | Correct-to-merge | pending |
+| C: stout | Phase 2 design, Task C | reviewer-flash | Correct-to-merge | Correct-to-merge |
 | D: measurements/flow/validation | Phase 2 design, Task D | reviewer-flash | Correct-to-merge | pending |
 | Integrated branch | Phase 2 design | reviewer-flash | Correct-to-merge | pending |
 
@@ -253,4 +253,84 @@ product quadratically. The license now carries both notices, and the force uses
 term-owned prefix/suffix scratch allocated outside the site loop. The complete
 Rust gate and numerical comparisons remained green. The delta re-review found
 no remaining finding and recorded `Correct-to-merge`; the Task B
+post-implementation gate is closed.
+
+## Task C implementation
+
+Task C adds `gaugefields::stout_step` and exposes the existing
+`HostGaugeLinks::force_staple` as the documented unweighted positive six-term
+plaquette staple. The implementation validates finite `rho`, host SU(3)
+storage, every input component, and allocation bounds before allocating the TA
+field or invoking the backend. It builds all `Q_mu(x)` coefficients from one
+unchanged input view, clones only after those generators are complete, and
+uses the caller-owned `CpuEvolutionContext` through the existing
+`exp_ta_update`. Finite negative and zero `rho` values are valid. Input links
+remain bitwise unchanged on success and every failure. Finite input whose
+intermediate TA coefficients overflow is classified as
+`Su3NumericalRange { operation: "stout_step", stage: "TA coefficients" }`, not
+as a non-finite input.
+
+The exact convention is
+`C_mu=rho*force_staple`, `Omega=C_mu*U_mu^dagger`, `Q_mu=TA(Omega_mu)`, and
+`U'_mu=exp(Q_mu)U_mu`. A direct independent six-term test fixes every staple
+orientation and its positive sign with zero residual.
+
+### Task C deterministic oracle
+
+`fixtures/generate.jl stout_task_c` uses clean pinned Gaugefields.jl v0.7.2 at
+`9e5719970770f4497405a856315c90bef7f74449` and its `stout_fast.jl`,
+`stout_dataset.jl`, `Abstractsmearing.jl`, and `HMCstout_test_nowing.jl`
+conventions. It applies one synchronous isotropic layer to the existing
+direction-distinct `2^4` field at `rho=0.12` and `rho=-0.07`. Rust compares all
+four input directions bit-exactly and every complex output component. Results:
+
+- `rho=0.12`: Julia maximum residual
+  `2.41409693502886844e-15`; unitarity `6.32443542595004009e-15`;
+  determinant `1.22195478062137133e-15`.
+- `rho=-0.07`: Julia maximum residual
+  `1.92026915295028663e-15`; unitarity `5.37168993881695668e-15`;
+  determinant `8.98688895805620469e-16`.
+- direct positive-staple residual: exactly `0.0`.
+
+Both focused generator runs produced Task C tree hash
+`4a52e3915d3444f221ec1a8bf970cfa17f405f51a9a678a242d6b4018ba4020e`.
+Both complete default generator runs produced fixture-tree hash
+`f45a2e94cd564eff96d55ec4ba4b720e8a708676737115ac2ef2c9e3a68a8c51`.
+The invocation set `GAUGEFIELDS_JL_DIR`, `WILSONLOOP_JL_DIR`, and
+`JULIA_NUM_THREADS=1` explicitly.
+
+Task C fixture SHA-256 values:
+
+- `metadata.json`: `33f2b4e565854619d6c504b7518169e7a2700deb88c5d5652dbb82d663ea192c`
+- `stout_plus0.npy`: `8381709f3f2891d9b4265d94e323508c478f78a92f87619bf5f7bbcdf7b15b1f`
+- `stout_plus1.npy`: `ad8ed1a5e1fa8dde9f943678efb475e04908c1e7124d6b2a81b28364af2d123f`
+- `stout_plus2.npy`: `16de73bc659ef54698cf55ee971e717b9e42fa2d262579e53e8d63e7f18f3e08`
+- `stout_plus3.npy`: `de17150715bc3c847c2dd7ae4c56d810ce73663518e47cda92f61d136abe5084`
+- `stout_minus0.npy`: `dcf2fe7aca9e0a57f43273b6a016639d126f6a300094a00f7e74d24adca0abfa`
+- `stout_minus1.npy`: `3375e4620f99bdd759fe723537a22082541f7d79a9b82e4b3b51d3763e9e7c5b`
+- `stout_minus2.npy`: `6c034d9212b27a6e244bbfeb6e44648fbc375cab898d3932879a1737439f772f`
+- `stout_minus3.npy`: `d238ec86b46447e8780c441946f18372babec58b8ec01965aa74afd66a922ea2`
+- `u0..u3.npy`: bit-exact copies of the established direction-distinct fixture.
+
+### Task C local gates
+
+- Stout integration suite: 7 passed.
+- `cargo fmt --all -- --check`: passed.
+- `cargo check --workspace`: passed.
+- `cargo test --workspace`: 169 passed, 1 ignored, including 35 doctests.
+- `cargo test --workspace --all-features`: 179 passed, 1 ignored, including
+  35 doctests.
+- `cargo test --workspace --doc --all-features`: 35 passed.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
+  passed.
+- `cargo doc --workspace --all-features --no-deps`: passed.
+- `cargo build --workspace --examples --all-features`: passed.
+- `git diff --check`: passed.
+
+The first Task C full-diff review by `reviewer-flash` recorded
+`Correct-to-merge` with two Minor findings: reuse the established checked
+allocation helper and remove a redundant final finiteness scan already
+guaranteed by `exp_ta_update`. `force::checked_count` is now the crate-private
+shared helper, and the unreachable output rescan is removed. The delta
+re-review found no remaining finding and recorded `Correct-to-merge`; the Task C
 post-implementation gate is closed.

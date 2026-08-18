@@ -1,0 +1,26 @@
+{
+  "schema": "stout_task_c.v1",
+  "lattice": [2, 2, 2, 2],
+  "nc": 3,
+  "condition": "hot",
+  "randomnumber": "Reproducible",
+  "direction_disambiguation": "direction mu is periodically shifted by +1 along axis mu",
+  "gaugefields_jl": {"package": "Gaugefields.jl", "version": "0.7.2", "commit": "9e5719970770f4497405a856315c90bef7f74449", "clean": true},
+  "wilsonloop_jl": {"package": "Wilsonloop.jl", "version": "0.1.5", "commit": "e1a617fdedb19b785f89bdeb13c30e53b20743a7", "clean": true},
+  "source_urls": [
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/smearing/stout_fast.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/smearing/stout_dataset.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/smearing/Abstractsmearing.jl",
+    "https://github.com/akio-tomiya/Wilsonloop.jl/blob/e1a617fdedb19b785f89bdeb13c30e53b20743a7/src/Wilsonloop.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/test/HMCstout_test_nowing.jl"
+  ],
+  "source_functions": ["STOUT_Layer", "CovNeuralnet", "calc_smearedU", "apply_smearing_U", "apply_neuralnet!", "forward!", "calc_C!", "STOUT_dataset", "make_Cμ", "HMCstout_test_nowing"],
+  "rhos": {"positive": 0.12, "negative": -0.07},
+  "convention": "C_mu=rho*positive six-term plaquette staple; Omega=C_mu*U_mu†; Q=TA(Omega); Uprime=exp(Q)*U_mu",
+  "routine_order": "one isotropic plaquette-only layer, all four directions evaluated from the unchanged input before output storage",
+  "layout": {"links": "ComplexF64 Fortran [row,column,x,y,z,t]", "site_order": "x fastest"},
+  "files": ["u0.npy", "u1.npy", "u2.npy", "u3.npy", "stout_plus0.npy", "stout_plus1.npy", "stout_plus2.npy", "stout_plus3.npy", "stout_minus0.npy", "stout_minus1.npy", "stout_minus2.npy", "stout_minus3.npy"],
+  "comparison": {"field_max_abs_tolerance": 5e-12, "criterion": "maximum absolute complex-component residual over every direction/site/row/column"},
+  "update": "all links use one unchanged input snapshot",
+  "generator": {"script": "fixtures/generate.jl", "mode": "stout_task_c", "oracle_only": true}
+}

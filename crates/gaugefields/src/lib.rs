@@ -16,6 +16,7 @@ mod kernel;
 mod mat3;
 mod observables;
 mod rng;
+mod stout;
 
 #[cfg(feature = "autodiff")]
 pub use ad::ad_rules;
@@ -38,3 +39,4 @@ pub use kernel::HostGaugeLinks;
 pub use mat3::Mat3;
 pub use observables::{measurement_staple, normalized_plaquette, plaquette_sum, wilson_action};
 pub use rng::ReproducibleRng;
+pub use stout::stout_step;

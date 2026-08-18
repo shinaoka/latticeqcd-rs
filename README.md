@@ -171,6 +171,24 @@ the links are replaced. Cache entry counts are provider-dependent: the pinned
 cpu-faer unconjugated strided path reports zero retained analysis entries even
 though it uses the same cached session and stable slots.
 
+A synchronous isotropic stout step reuses that caller-owned context:
+
+```rust
+use gaugefields::{stout_step, CpuEvolutionContext};
+use tenferro_cpu::CpuBackend;
+
+# fn smear(links: &gaugefields::GaugeLinks) -> Result<gaugefields::GaugeLinks, gaugefields::GaugeError> {
+let mut context = CpuEvolutionContext::new(CpuBackend::new());
+let smeared = stout_step(&mut context, links, 0.12)?;
+# Ok(smeared)
+# }
+```
+
+It uses `C_mu = rho *` the unweighted positive six-term plaquette staple,
+then `Omega = C_mu * U_mu†`, `Q = TA(Omega)`, and
+`U'_mu = exp(Q) * U_mu`. Finite negative `rho` values are valid; every link
+uses the unchanged input snapshot and failures leave the input untouched.
+
 ## Quenched SU(3) heatbath
 
 The host-only Wilson heatbath owns no global state: callers provide validated
