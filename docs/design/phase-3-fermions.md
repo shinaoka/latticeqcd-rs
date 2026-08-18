@@ -1,6 +1,6 @@
 # Phase 3 fermions
 
-Status: pre-implementation review pending
+Status: approved; Task A complete, Task B pending
 
 ## Goal
 
@@ -86,6 +86,37 @@ Phase 1/2 reference boundary. v0.6.4 is the newest tagged release whose compat
 entry is `Gaugefields = "0.7"`. All referenced projects are MIT-licensed. The
 new crate preserves the applicable upstream notice and records source URLs in
 fixture metadata.
+
+## Reference-parallel organization
+
+Keep the Rust implementation structurally parallel to pinned Julia v0.6.4 so
+reviewers can compare it directly:
+
+| Rust module | Julia reference |
+|---|---|
+| `field.rs` | `src/AbstractFermions_4D.jl` and family field types |
+| `wilson.rs` | `src/WilsonFermion/WilsonFermion.jl` |
+| `solvers.rs` | `src/cgmethods.jl` |
+| `wilson_action.rs` | `src/action/WilsonFermiAction.jl` |
+| `wilson_hmc.rs` | `test/wilsonhmc.jl` plus `src/action/WilsonFermiAction.jl` force updates |
+| `staggered.rs` | `src/StaggeredFermion/StaggeredFermion.jl` |
+| `staggered_action.rs` | `src/action/StaggeredFermiAction.jl` |
+| `rhmc.rs` | `src/rhmc/rhmc.jl` |
+
+Within each kernel, retain the Julia decomposition, hop ordering, projector
+names, solver recurrence names, and meaningful intermediate names where doing
+so does not violate Rust ownership or the established storage contract. Each
+ported function cites the exact Julia function and revision. Fixture metadata
+maps every compared Julia entrypoint to its Rust entrypoint and records layout
+conversion. Tests compare named intermediate results when that makes an action,
+force, or trajectory discrepancy easier to localize.
+
+Parallel organization does not copy Julia global RNG, temporary-pool mutation,
+assertions at public boundaries, hidden defaults, known defects, halo storage,
+or repeated shifted-field allocation. Rust typed errors, transactional output,
+caller-owned state, site-contiguous storage, and one prepared host view remain
+mandatory. Mechanical Julia helper layers with no numerical semantics are not
+recreated.
 
 ## Crate and dependency boundary
 

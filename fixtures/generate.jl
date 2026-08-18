@@ -1,11 +1,12 @@
 import Pkg
 import Random
 
+const FERMIONS_TASK_A_MODE = ARGS == ["fermions_task_a"]
 const D1_MODE = isempty(ARGS) || ARGS == ["measurements_task_d1"]
 const D2_MODE = isempty(ARGS) || ARGS == ["gradientflow_task_d2"]
 const REFERENCE_MODE = D1_MODE || D2_MODE
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"])
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"] || FERMIONS_TASK_A_MODE)
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2|fermions_task_a]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -97,6 +98,15 @@ if D1_MODE
 end
 const JULIA_PROJECT = get(ENV, "LATTICEQCD_JULIA_PROJECT", "")
 const ACTIVE_PROJECT = isempty(JULIA_PROJECT) ? REQUESTED_CHECKOUT : JULIA_PROJECT
+const LATTICEDIRACOPERATORS_CHECKOUT = get(
+    ENV,
+    "LATTICEDIRACOPERATORS_JL_DIR",
+    joinpath(dirname(abspath(REQUESTED_CHECKOUT)), "LatticeDiracOperators.jl"),
+)
+if FERMIONS_TASK_A_MODE
+    isdir(LATTICEDIRACOPERATORS_CHECKOUT) ||
+        error("expected LatticeDiracOperators.jl checkout at $LATTICEDIRACOPERATORS_CHECKOUT")
+end
 Pkg.activate(ACTIVE_PROJECT)
 using Gaugefields
 import Wilsonloop
@@ -106,6 +116,9 @@ end
 using NPZ
 import Gaugefields.Temporalfields_module: get_temp
 using LinearAlgebra
+if FERMIONS_TASK_A_MODE
+    @eval using LatticeDiracOperators
+end
 
 const NC = 3
 const BETA = 6.0
@@ -155,6 +168,153 @@ if D1_MODE
     read(joinpath(QCDMEASUREMENTS_SOURCE, "src", "QCDMeasurements.jl")) ==
         read(joinpath(QCDMEASUREMENTS_CHECKOUT, "src", "QCDMeasurements.jl")) ||
         error("active QCDMeasurements.jl source does not match the pinned checkout")
+end
+
+if FERMIONS_TASK_A_MODE
+    const LATTICEDIRACOPERATORS_VERSION = string(Base.pkgversion(LatticeDiracOperators))
+    const LATTICEDIRACOPERATORS_SOURCE = dirname(dirname(pathof(LatticeDiracOperators)))
+    const LATTICEDIRACOPERATORS_COMMIT = readchomp(
+        `git -C $LATTICEDIRACOPERATORS_CHECKOUT rev-parse HEAD`,
+    )
+    const LATTICEDIRACOPERATORS_DIRTY = read(
+        `git -C $LATTICEDIRACOPERATORS_CHECKOUT status --porcelain --untracked-files=all`,
+        String,
+    )
+    isempty(strip(LATTICEDIRACOPERATORS_DIRTY)) ||
+        error("refusing fixture provenance from dirty LatticeDiracOperators.jl checkout: $LATTICEDIRACOPERATORS_CHECKOUT")
+    read(joinpath(LATTICEDIRACOPERATORS_SOURCE, "src", "LatticeDiracOperators.jl")) ==
+        read(joinpath(LATTICEDIRACOPERATORS_CHECKOUT, "src", "LatticeDiracOperators.jl")) ||
+        error("active LatticeDiracOperators.jl source does not match the pinned checkout")
+end
+
+function fermions_task_a_links(lattice)
+    links = Initialize_Gaugefields(NC, 0, lattice...; condition="cold")
+    nx, ny, nz, nt = lattice
+    for direction in 1:4, it in 1:nt, iz in 1:nz, iy in 1:ny, ix in 1:nx
+        a = 0.017 * direction + 0.031 * (ix - 1) - 0.013 * (iy - 1) +
+            0.007 * (iz - 1) + 0.011 * (it - 1)
+        b = -0.023 * direction + 0.019 * (ix - 1) + 0.005 * (iy - 1) -
+            0.009 * (iz - 1) + 0.003 * (it - 1)
+        links[direction].U[:, :, ix, iy, iz, it] .= ComplexF64[
+            cis(a) 0 0
+            0 cis(b) 0
+            0 0 cis(-a - b)
+        ]
+    end
+    return links
+end
+
+function fermions_task_a_input(lattice)
+    nx, ny, nz, nt = lattice
+    input = Array{ComplexF64}(undef, NC, nx, ny, nz, nt, 4)
+    for spin in 1:4, it in 1:nt, iz in 1:nz, iy in 1:ny, ix in 1:nx, color in 1:NC
+        site = (ix - 1) + nx * ((iy - 1) + ny * ((iz - 1) + nz * (it - 1)))
+        real_part = 0.013 * (color + 3 * (spin - 1) + 12 * site)
+        imag_part = -0.009 * (color + 2 * (color - 1) + (spin - 1) + 5 * site)
+        input[color, ix, iy, iz, it, spin] = ComplexF64(real_part, imag_part)
+    end
+    return input
+end
+
+function fermions_task_a_field(links, input)
+    source = Initialize_pseudofermion_fields(links[1], "Wilson"; nowing=true)
+    source.f .= input
+    return source
+end
+
+function generate_fermions_task_a()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == "9e5719970770f4497405a856315c90bef7f74449" ||
+        error("expected Gaugefields.jl commit 9e5719970770f4497405a856315c90bef7f74449, found $COMMIT")
+    LATTICEDIRACOPERATORS_VERSION == "0.6.4" ||
+        error("expected LatticeDiracOperators.jl v0.6.4, found $LATTICEDIRACOPERATORS_VERSION")
+    LATTICEDIRACOPERATORS_COMMIT == "bdef628184597815ba3e0cddf2536df767e78a02" ||
+        error("expected LatticeDiracOperators.jl commit bdef628184597815ba3e0cddf2536df767e78a02, found $LATTICEDIRACOPERATORS_COMMIT")
+
+    lattice = (2, 2, 2, 2)
+    links = fermions_task_a_links(lattice)
+    input = fermions_task_a_input(lattice)
+    out = joinpath(@__DIR__, "fermions_task_a")
+    mkpath(out)
+    for direction in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(direction - 1).npy"), links[direction].U)
+    end
+    NPZ.npzwrite(joinpath(out, "input_julia.npy"), input)
+    NPZ.npzwrite(joinpath(out, "input_rust.npy"), permutedims(input, (1, 6, 2, 3, 4, 5)))
+
+    cases = ((name="periodic", boundary=[1, 1, 1, 1]), (name="antiperiodic", boundary=[1, 1, 1, -1]))
+    for case in cases
+        source = fermions_task_a_field(links, input)
+        parameters = Dict{String,Any}(
+            "Dirac_operator" => "Wilson",
+            "κ" => 0.13,
+            "r" => 1.0,
+            "faster version" => false,
+            "verbose_level" => 0,
+            "boundarycondition" => Int8.(case.boundary),
+        )
+        dirac = Dirac_operator(links, source, parameters)
+        result = similar(source)
+        result_dagger = similar(source)
+        result_normal = similar(source)
+        mul!(result, dirac, source)
+        mul!(result_dagger, adjoint(dirac), source)
+        mul!(result_normal, DdagD_operator(links, source, parameters), source)
+        for (label, field) in (("d", result), ("ddag", result_dagger), ("ddagd", result_normal))
+            NPZ.npzwrite(joinpath(out, "$(label)_$(case.name)_julia.npy"), copy(field.f))
+            NPZ.npzwrite(
+                joinpath(out, "$(label)_$(case.name)_rust.npy"),
+                permutedims(field.f, (1, 6, 2, 3, 4, 5)),
+            )
+        end
+    end
+
+    open(joinpath(out, "metadata.json"), "w") do io
+        q = Char(34)
+        print(io, "{\n")
+        print(io, "  \"schema\": \"fermions_task_a.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"components\": 4,\n")
+        print(io, "  \"kappa\": 0.13,\n")
+        print(io, "  \"r\": 1.0,\n")
+        print(io, "  \"boundaries\": {\"periodic\": [1, 1, 1, 1], \"antiperiodic\": [1, 1, 1, -1]},\n")
+        print(io, "  \"gaugefields_jl\": {\"package\": \"Gaugefields.jl\", \"version\": \"$VERSION\", \"commit\": \"$COMMIT\", \"clean\": true},\n")
+        print(io, "  \"latticediracoperators_jl\": {\"package\": \"LatticeDiracOperators.jl\", \"version\": \"$LATTICEDIRACOPERATORS_VERSION\", \"commit\": \"$LATTICEDIRACOPERATORS_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"source_urls\": [\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/AbstractGaugefields.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/nowing/gaugefields_4D_nowing.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/AbstractFermions_4D.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/Diracoperators.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/WilsonFermion/WilsonFermion.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/WilsonFermion/WilsonFermion_4D.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/WilsonFermion/WilsonFermion_4D_nowing.jl\"\n")
+        print(io, "  ],\n")
+        print(io, "  \"source_functions\": [\"Initialize_Gaugefields\", \"mk_gamma\", \"Wilson_Dirac_operator\", \"shift_fermion\", \"shifted_fermion!\", \"Wx!\", \"Wdagx_noclover!\", \"DdagD_Wilson_operator\", \"LinearAlgebra.mul!\", \"LinearAlgebra.dot\", \"mul_γ5x!\"],\n")
+        print(io, "  \"entrypoint_map\": [\n")
+        print(io, "    {\"julia\": \"Initialize_Gaugefields\", \"julia_source\": \"Gaugefields.jl/src/AbstractGaugefields.jl\", \"rust\": \"fermions_task_a_links + GaugeLinks::host_view\"},\n")
+        print(io, "    {\"julia\": \"mk_gamma\", \"julia_source\": \"src/WilsonFermion/WilsonFermion.jl\", \"rust\": \"wilson.rs::GAMMA + project_spin\"},\n")
+        print(io, "    {\"julia\": \"Wilson_Dirac_operator\", \"julia_source\": \"src/WilsonFermion/WilsonFermion.jl\", \"rust\": \"WilsonDirac::with_boundary\"},\n")
+        print(io, "    {\"julia\": \"shift_fermion/shifted_fermion!\", \"julia_source\": \"src/WilsonFermion/WilsonFermion_4D_nowing.jl\", \"rust\": \"WilsonDirac::neighbor\"},\n")
+        print(io, "    {\"julia\": \"Wx!\", \"julia_source\": \"src/WilsonFermion/WilsonFermion.jl\", \"rust\": \"FermionOperator for WilsonDirac::apply_into\"},\n")
+        print(io, "    {\"julia\": \"Wdagx_noclover!\", \"julia_source\": \"src/WilsonFermion/WilsonFermion.jl\", \"rust\": \"FermionOperator for WilsonAdjoint::apply_into\"},\n")
+        print(io, "    {\"julia\": \"DdagD_Wilson_operator + LinearAlgebra.mul!\", \"julia_source\": \"src/WilsonFermion/WilsonFermion.jl + src/Diracoperators.jl\", \"rust\": \"NormalOperator::apply_into\"},\n")
+        print(io, "    {\"julia\": \"LinearAlgebra.dot\", \"julia_source\": \"src/AbstractFermions_4D.jl\", \"rust\": \"FermionField::inner_product\"},\n")
+        print(io, "    {\"julia\": \"mul_γ5x!\", \"julia_source\": \"src/WilsonFermion/WilsonFermion_4D_nowing.jl\", \"rust\": \"FermionField::gamma5\"}\n")
+        print(io, "  ],\n")
+        print(io, "  \"construction\": \"explicit diagonal SU(3) links and spinor values from fixed formulas; no RNG or global random state\",\n")
+        print(io, "  \"layout\": {\"julia_shape\": \"[3,NX,NY,NZ,NT,4]\", \"rust_shape\": \"[3,4,NX,NY,NZ,NT]\", \"julia_input\": \"ComplexF64 Fortran [color,x,y,z,t,spin]\", \"rust_input_and_outputs\": \"Complex64 column-major [color,spin,x,y,z,t]\", \"conversion\": \"permutedims(input, (1, 6, 2, 3, 4, 5)); the same explicit transpose is applied to every output\", \"permutation\": [1, 6, 2, 3, 4, 5], \"site_order\": \"x fastest\"},\n")
+        print(io, "  \"gamma\": \"Euclidean chiral basis from mk_gamma; gamma5=diag(-1,-1,+1,+1)\",\n")
+        print(io, "  \"files\": [\"u0.npy\", \"u1.npy\", \"u2.npy\", \"u3.npy\", \"input_julia.npy\", \"input_rust.npy\", \"d_periodic_julia.npy\", \"d_periodic_rust.npy\", \"ddag_periodic_julia.npy\", \"ddag_periodic_rust.npy\", \"ddagd_periodic_julia.npy\", \"ddagd_periodic_rust.npy\", \"d_antiperiodic_julia.npy\", \"d_antiperiodic_rust.npy\", \"ddag_antiperiodic_julia.npy\", \"ddag_antiperiodic_rust.npy\", \"ddagd_antiperiodic_julia.npy\", \"ddagd_antiperiodic_rust.npy\"],\n")
+        print(io, "  \"comparison\": {\"component_max_abs_tolerance\": 2e-12, \"criterion\": \"maximum absolute complex-component residual over every color, component, and site\"},\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"fermions_task_a\", \"randomness\": \"none\"}\n")
+        print(io, "}\n")
+    end
+end
+
+if FERMIONS_TASK_A_MODE
+    generate_fermions_task_a()
+    exit()
 end
 
 function distinguish_reproducible_directions!(links)

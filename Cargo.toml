@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/gaugefields", "crates/wilsonloop", "crates/measurements"]
+members = [
+    "crates/gaugefields",
+    "crates/wilsonloop",
+    "crates/measurements",
+    "crates/dirac-operators",
+]
 resolver = "2"
 
 [workspace.package]
