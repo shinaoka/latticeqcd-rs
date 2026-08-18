@@ -230,8 +230,9 @@ reported with the path; atomic replacement is not claimed.
 
 ### Compatibility evidence
 
-A Julia generator writes a standards-complete LIME message using the pinned
-Gaugefields.jl layout and c-lime tooling. Rust reads every component bit-exactly.
+A Julia generator writes a standards-complete LIME message with independent
+manual framing and the pinned Gaugefields.jl binary layout; it does not use or
+claim c-lime. Rust reads every component bit-exactly.
 Rust writes the same field; pinned Julia loads it with explicit dimensions and
 matches every component locally. CI additionally checks Rust write/read
 bit-exact round trip, a malformed-file table, and that invalid links fail

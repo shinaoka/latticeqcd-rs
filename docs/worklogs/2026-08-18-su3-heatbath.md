@@ -35,7 +35,7 @@ ran final evidence. The change:
 
 - adds validated `HeatbathParams`, `HeatbathSweepStats`, and transactional
   `heatbath_sweep`;
-- reuses `PreparedGaugeField::force_staple().adjoint()` rather than duplicating
+- reuses `HostGaugeLinks::force_staple().adjoint()` rather than duplicating
   topology/staple code;
 - updates direction 0 through 3, even then odd parity, x-fastest site order,
   with fixed `(0,1)`, `(1,2)`, `(0,2)` subgroup hits;

@@ -1,6 +1,6 @@
 # Phase 2 quenched measurements worklog
 
-Status: Task D complete; integrated branch review pending
+Status: integrated branch complete; PR and hosted CI pending
 
 ## Base and scope
 
@@ -55,7 +55,7 @@ Result: 123 passed, 1 ignored, including 15 doctests.
 | B: Wilson paths/actions/force | Phase 2 design, Task B | reviewer-flash | Correct-to-merge | Correct-to-merge |
 | C: stout | Phase 2 design, Task C | reviewer-flash | Correct-to-merge | Correct-to-merge |
 | D: measurements/flow/validation | Phase 2 design, Task D | reviewer-flash | Correct-to-merge | Correct-to-merge |
-| Integrated branch | Phase 2 design | reviewer-flash | Correct-to-merge | pending |
+| Integrated branch | Phase 2 design | reviewer-flash | Correct-to-merge | Correct-to-merge |
 
 Review rounds before implementation:
 
@@ -538,3 +538,46 @@ reader; README and regenerated metadata use the checkout's actual
 final default generator runs unambiguously. Delta re-reviews found no remaining
 finding and recorded `Correct-to-merge`; the Task D post-implementation gate is
 closed. No commit or push was performed.
+
+## Integrated local gate
+
+The exact five-commit Phase 2 branch is based directly on current
+`origin/main` `094f96e81165b0732b0619dd084c0f2a1e5f0f0a` (0 behind, 5 ahead).
+Before the final gate, `cargo clean` removed 20.7 GiB from the shared target;
+the workspace was then rebuilt from no Rust artifacts with `profile.dev.debug`
+and `profile.test.debug` disabled.
+
+Fresh exact-tree results:
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo check --workspace`: passed.
+- `cargo test --workspace`: 186 passed, 1 ignored, including 39 doctests.
+- `cargo test --workspace --all-features`: 196 passed, 1 ignored, including
+  39 doctests.
+- `cargo test --workspace --doc --all-features`: 39 passed.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
+  passed.
+- `cargo doc --workspace --all-features --no-deps`: passed.
+- `cargo build --workspace --examples --all-features`: passed.
+- All five examples ran successfully: `ildg_roundtrip`, `quenched_heatbath`,
+  `quenched_hmc`, `traced_wilson_action`, and `quenched_measurements`.
+- Final focused Julia tree hashes: D1
+  `3738d6cd4bf33518812c14a7282597d7e03c618aadd846b2b73cba82bf9576cd`,
+  D2 `5e9d0d4e01b8e3478b1e2e671838e5dd7afa2ba3b1e3c10543c73241014a915b`;
+  final default tree hash
+  `c1543ff3702ac2babf25d43b5bc979bd3af31ed80a8d372e20596a808213ea8e`.
+- All workspace package licenses report `MIT`; `rand_chacha` is absent; normal
+  crate dependencies point only downward; no Phase 2 fixture file exceeds
+  10 KiB; the five new fixture trees total 272 KiB.
+- `git diff --check`, provenance, current-design stale-symbol, artifact, and
+  checkout-cleanliness audits passed.
+
+The first integrated full-branch review by `reviewer-flash` recorded
+`Correct-to-merge` with two Minor findings: the branch was five rather than
+four commits ahead, and `ildg_task_a/metadata.json` lacked an automated
+consumer. The commit count is corrected, and the ILDG integration test now
+asserts metadata schema, lattice, NC, pinned commit, source URLs, manual-writer
+provenance, LIME/XML fields, complete file list, and zero input tolerance.
+Default/all-feature tests, doctests, clippy, and diff-check remain green. The
+delta re-review found no remaining finding and recorded `Correct-to-merge`;
+the integrated local review gate is closed. Hosted PR CI remains pending.

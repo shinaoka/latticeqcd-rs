@@ -38,7 +38,7 @@ allocate tensor-roll buffers and do not expose Gaugefields.jl's mutable shared
 that Julia reference only as an oracle (`gaugefields_4D_nowing.jl:380-454`);
 Rust parity is evaluated through `neighbor_site` reads.
 
-Direct kernels validate once through `PreparedGaugeField`, borrow each of the
+Direct kernels validate once through `HostGaugeLinks`, borrow each of the
 four host slices once, and precompute checked plus/minus neighbor tables. The
 periodic action, measurement staple, dense gradient, and TA force share these
 site-local `Mat3` leaves. Dtype-erased `Tensor` values occur only at fixture and

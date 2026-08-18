@@ -4,6 +4,7 @@ use gaugefields::{
 };
 use npyz::NpyFile;
 use num_complex::Complex64;
+use serde_json::Value;
 use std::{fs, path::PathBuf};
 use tenferro_tensor::TypedTensor;
 
@@ -101,6 +102,28 @@ fn host_view_clone_and_kernel_parity_remain_fallible_and_read_only() {
 #[test]
 fn pinned_julia_fixture_is_component_exact_and_rust_writer_is_canonical() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/ildg_task_a");
+    let metadata: Value =
+        serde_json::from_slice(&fs::read(fixture.join("metadata.json")).unwrap()).unwrap();
+    assert_eq!(metadata["schema"], "ildg_task_a.v1");
+    assert_eq!(metadata["lattice"], serde_json::json!([2, 2, 2, 2]));
+    assert_eq!(metadata["nc"], 3);
+    assert_eq!(
+        metadata["gaugefields_jl_commit"],
+        "9e5719970770f4497405a856315c90bef7f74449"
+    );
+    assert_eq!(metadata["source_urls"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        metadata["writer"],
+        "independent manual LIME writer; no c-lime and no incomplete save_binarydata! implementation"
+    );
+    assert_eq!(metadata["lime"]["header_bytes"], 144);
+    assert_eq!(metadata["xml"]["precision"], 64);
+    assert_eq!(
+        metadata["files"],
+        serde_json::json!(["gauge.ildg", "u0.npy", "u1.npy", "u2.npy", "u3.npy"])
+    );
+    assert_eq!(metadata["comparison"]["field_max_abs_tolerance"], 0.0);
+
     let path = fixture.join("gauge.ildg");
     let links = read_ildg(&path).unwrap();
     let view = links.host_view().unwrap();
