@@ -1,6 +1,6 @@
 # Phase 2 quenched measurements worklog
 
-Status: integrated branch complete; PR and hosted CI pending
+Status: integrated branch complete; PR #20 open
 
 ## Base and scope
 
@@ -541,8 +541,8 @@ closed. No commit or push was performed.
 
 ## Integrated local gate
 
-The exact five-commit Phase 2 branch is based directly on current
-`origin/main` `094f96e81165b0732b0619dd084c0f2a1e5f0f0a` (0 behind, 5 ahead).
+The exact six-commit Phase 2 branch is based directly on current
+`origin/main` `094f96e81165b0732b0619dd084c0f2a1e5f0f0a` (0 behind, 6 ahead).
 Before the final gate, `cargo clean` removed 20.7 GiB from the shared target;
 the workspace was then rebuilt from no Rust artifacts with `profile.dev.debug`
 and `profile.test.debug` disabled.
@@ -580,4 +580,13 @@ asserts metadata schema, lattice, NC, pinned commit, source URLs, manual-writer
 provenance, LIME/XML fields, complete file list, and zero input tolerance.
 Default/all-feature tests, doctests, clippy, and diff-check remain green. The
 delta re-review found no remaining finding and recorded `Correct-to-merge`;
-the integrated local review gate is closed. Hosted PR CI remains pending.
+the integrated local review gate is closed.
+
+PR #20 is open at <https://github.com/shinaoka/latticeqcd-rs/pull/20> and was
+`CLEAN` after creation. Both CI runs for reviewed source head `90ab378` passed:
+
+- <https://github.com/shinaoka/latticeqcd-rs/actions/runs/32161993573>
+- <https://github.com/shinaoka/latticeqcd-rs/actions/runs/32162043707>
+
+This final documentation-only evidence commit triggers the authoritative checks
+shown on the PR. The PR is intentionally not merged.
