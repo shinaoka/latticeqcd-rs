@@ -6,9 +6,10 @@
 //! Momentum coefficient order follows `src/TA_Gaugefields.jl` and
 //! `src/4D/TA_gaugefields_4D_serial.jl`.
 
+use crate::field::duplicate_links;
 use crate::{
     exp_ta_update, gauge_force, require_su3, wilson_action, CpuEvolutionContext, GaugeError,
-    GaugeLinkTensor, GaugeLinks, LatticeShape4, ReproducibleRng, TaGaugeField,
+    GaugeLinks, LatticeShape4, ReproducibleRng, TaGaugeField,
 };
 use tenferro_tensor::TypedTensor;
 
@@ -307,7 +308,7 @@ where
     ) -> Result<(), GaugeError>,
 {
     validate_state(links, momentum)?;
-    let mut proposed_links = clone_links(links)?;
+    let mut proposed_links = duplicate_links(links)?;
     let mut proposed_momentum = clone_momentum(momentum)?;
     leapfrog_steps(
         context,
@@ -366,7 +367,7 @@ pub fn hmc_update(
     require_su3(links)?;
     let mut momentum = sample_momentum(links.lattice(), rng)?;
     let initial_hamiltonian = hamiltonian(links, &momentum, params.beta)?;
-    let mut proposed_links = clone_links(links)?;
+    let mut proposed_links = duplicate_links(links)?;
     leapfrog_steps(
         context,
         &mut proposed_links,
@@ -488,25 +489,6 @@ fn add_scaled(
         .try_into()
         .map_err(|_| GaugeError::Tensor("HMC momentum requires four tensors".into()))?;
     TaGaugeField::new(tensors, momentum.lattice())
-}
-
-fn clone_links(links: &GaugeLinks) -> Result<GaugeLinks, GaugeError> {
-    let lattice = links.lattice();
-    let copies =
-        (0..4)
-            .map(|mu| {
-                let tensor = links.links()[mu].typed().duplicate().map_err(|source| {
-                    GaugeError::Evolution {
-                        operation: "HMC link duplicate",
-                        source,
-                    }
-                })?;
-                GaugeLinkTensor::from_typed(tensor, lattice)
-            })
-            .collect::<Result<Vec<_>, GaugeError>>()?
-            .try_into()
-            .map_err(|_| GaugeError::Tensor("HMC links require four tensors".into()))?;
-    GaugeLinks::new(copies)
 }
 
 fn clone_momentum(momentum: &TaGaugeField) -> Result<TaGaugeField, GaugeError> {

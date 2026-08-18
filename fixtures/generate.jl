@@ -1,12 +1,13 @@
 import Pkg
 import Random
 
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"])
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"])
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
 json_string_array(values) = "[" * join([string(Char(34), value, Char(34)) for value in values], ", ") * "]"
+json_number_array(values) = "[" * join(repr.(values), ", ") * "]"
 
 function generate_reproducible_rng()
     out = joinpath(@__DIR__, "reproducible_rng")
@@ -89,10 +90,17 @@ const HMC_STEP_SIZE = 0.01
 const HMC_STEPS = 4
 const HMC_STATE = (UInt64(1), UInt64(2), UInt64(3), UInt64(4))
 const HMC_JULIA_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
+const HEATBATH_JULIA_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
+const HEATBATH_BETAS = (5.5, 5.7, 6.0)
+const HEATBATH_SEEDS = (2026081801, 2026081802, 2026081803)
+const HEATBATH_BURN_IN = 512
+const HEATBATH_BLOCKS = 32
+const HEATBATH_SWEEPS_PER_BLOCK = 32
+const HEATBATH_MAX_ATTEMPTS = 100_000
 const VERSION = string(Base.pkgversion(Gaugefields))
 const CHECKOUT = dirname(dirname(pathof(Gaugefields)))
 const COMMIT = readchomp(`git -C $CHECKOUT rev-parse HEAD`)
-const DIRTY = read(`git -C $CHECKOUT status --porcelain --untracked-files=no`, String)
+const DIRTY = read(`git -C $CHECKOUT status --porcelain --untracked-files=all`, String)
 isempty(strip(DIRTY)) || error("refusing fixture provenance from dirty Gaugefields.jl checkout: $CHECKOUT")
 
 function hmc_open_unit(rng)
@@ -426,6 +434,117 @@ function generate_normalize_su3()
     end
 end
 
+function heatbath_normalized_plaquette(U, temp1, temp2)
+    return real(calculate_Plaquette(U, temp1, temp2)) / (6 * U[1].NV * U[1].NC)
+end
+
+function heatbath_chain(beta, seed)
+    Random.seed!(seed)
+    U = Initialize_Gaugefields(NC, 0, 2, 2, 2, 2; condition="cold")
+    h = Heatbath(U, beta)
+    temp1 = similar(U[1])
+    temp2 = similar(U[1])
+
+    for _ in 1:HEATBATH_BURN_IN
+        heatbath!(U, h)
+    end
+
+    block_means = Float64[]
+    for _ in 1:HEATBATH_BLOCKS
+        block_sum = 0.0
+        for _ in 1:HEATBATH_SWEEPS_PER_BLOCK
+            heatbath!(U, h)
+            block_sum += heatbath_normalized_plaquette(U, temp1, temp2)
+        end
+        push!(block_means, block_sum / HEATBATH_SWEEPS_PER_BLOCK)
+    end
+    mean = sum(block_means) / HEATBATH_BLOCKS
+    sample_variance = sum((value - mean)^2 for value in block_means) / (HEATBATH_BLOCKS - 1)
+    standard_error = sqrt(sample_variance / HEATBATH_BLOCKS)
+    return block_means, mean, standard_error
+end
+
+function generate_heatbath_statistics()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == HEATBATH_JULIA_COMMIT || error("expected Gaugefields.jl commit $HEATBATH_JULIA_COMMIT, found $COMMIT")
+    out = joinpath(@__DIR__, "heatbath_statistics")
+    mkpath(out)
+    chains = [heatbath_chain(beta, seed) for (beta, seed) in zip(HEATBATH_BETAS, HEATBATH_SEEDS)]
+
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n")
+        print(io, "  \"schema\": \"heatbath_statistics.v1\",\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"chains\": [\n")
+        for (index, ((block_means, mean, standard_error), beta, seed)) in enumerate(zip(chains, HEATBATH_BETAS, HEATBATH_SEEDS))
+            index > 1 && print(io, ",\n")
+            print(io, "    {\n")
+            print(io, "      \"beta\": ", repr(beta), ",\n")
+            print(io, "      \"julia_seed\": ", seed, ",\n")
+            print(io, "      \"measurements\": ", HEATBATH_BLOCKS * HEATBATH_SWEEPS_PER_BLOCK, ",\n")
+            print(io, "      \"block_means\": ", json_number_array(block_means), ",\n")
+            print(io, "      \"mean\": ", repr(mean), ",\n")
+            print(io, "      \"standard_error\": ", repr(standard_error), "\n")
+            print(io, "    }")
+        end
+        print(io, "\n  ],\n")
+        print(io, "  \"schedule\": {\n")
+        print(io, "    \"initial_condition\": \"cold\",\n")
+        print(io, "    \"burn_in_sweeps\": ", HEATBATH_BURN_IN, ",\n")
+        print(io, "    \"blocks\": ", HEATBATH_BLOCKS, ",\n")
+        print(io, "    \"sweeps_per_block\": ", HEATBATH_SWEEPS_PER_BLOCK, ",\n")
+        print(io, "    \"measurements\": ", HEATBATH_BLOCKS * HEATBATH_SWEEPS_PER_BLOCK, ",\n")
+        print(io, "    \"measurement\": \"after each measured heatbath! sweep\",\n")
+        print(io, "    \"block_statistic\": \"mean of consecutive plaquette measurements\",\n")
+        print(io, "    \"standard_error\": \"sample_stddev(block_means) / sqrt(blocks)\",\n")
+        print(io, "    \"max_attempts\": ", HEATBATH_MAX_ATTEMPTS, ",\n")
+        print(io, "    \"sweep\": \"Gaugefields.jl Heatbath/heatbath! direction and even-odd schedule\"\n")
+        print(io, "  },\n")
+        print(io, "  \"comparison\": {\n")
+        print(io, "    \"criterion\": \"abs(mean_rust - mean_julia) <= 6 * sqrt(se_rust^2 + se_julia^2)\",\n")
+        print(io, "    \"sigma_multiplier\": 6.0,\n")
+        print(io, "    \"rust_max_attempts\": ", HEATBATH_MAX_ATTEMPTS, ",\n")
+        print(io, "    \"independent_streams\": true,\n")
+        print(io, "    \"bitwise_trajectory_parity\": false\n")
+        print(io, "  },\n")
+        print(io, "  \"gaugefields_jl\": {\n")
+        print(io, "    \"package\": \"Gaugefields.jl\",\n")
+        print(io, "    \"version\": \"$VERSION\",\n")
+        print(io, "    \"commit\": \"$COMMIT\",\n")
+        print(io, "    \"clean_tracked_worktree\": true,\n")
+        print(io, "    \"source_paths\": [\"src/heatbath/heatbathmodule.jl\", \"src/AbstractGaugefields.jl\", \"src/4D/nowing/gaugefields_4D_nowing.jl\"],\n")
+        print(io, "    \"source_urls\": [\"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/heatbath/heatbathmodule.jl\", \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/AbstractGaugefields.jl\", \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/nowing/gaugefields_4D_nowing.jl\"],\n")
+        print(io, "    \"operations\": [\"Heatbath\", \"heatbath!\", \"calculate_Plaquette\"],\n")
+        print(io, "    \"iteration_max\": \"Heatbath constructor default ITERATION_MAX=10^5\"\n")
+        print(io, "  },\n")
+        print(io, "  \"julia\": {\n")
+        print(io, "    \"version\": \"", Base.VERSION, "\",\n")
+        print(io, "    \"source_commit\": \"", Base.GIT_VERSION_INFO.commit, "\",\n")
+        print(io, "    \"rng\": \"Random.seed!(seed) on Julia's default task-local RNG\"\n")
+        print(io, "  },\n")
+        print(io, "  \"normalization\": \"calculate_Plaquette(U, temp1, temp2) / (6 * NV * NC)\",\n")
+        print(io, "  \"deliberate_corrections\": [\n")
+        print(io, "    \"Rust omits the four unused preliminary draws before the Julia rejection loop\",\n")
+        print(io, "    \"Rust normalizes projected SU(2) matrices by sqrt(abs2(alpha) + abs2(beta))\",\n")
+        print(io, "    \"Rust rejects zero or singular staples and non-finite intermediates\",\n")
+        print(io, "    \"Rust maps xoshiro words to open uniforms instead of permitting rand() == 0\",\n")
+        print(io, "    \"Rust takes an explicit ReproducibleRng instead of Julia's global RNG\"\n")
+        print(io, "  ],\n")
+        print(io, "  \"generator\": {\n")
+        print(io, "    \"script\": \"fixtures/generate.jl\",\n")
+        print(io, "    \"mode\": \"heatbath_statistics\",\n")
+        print(io, "    \"reimplementation\": false\n")
+        print(io, "  }\n")
+        print(io, "}\n")
+    end
+end
+
+if ARGS == ["heatbath_statistics"]
+    generate_heatbath_statistics()
+    exit()
+end
+
 generate_reproducible_rng()
 generate_hmc_trajectory()
 generate("cold_1x1x1x1", (1, 1, 1, 1), "cold")
@@ -434,3 +553,4 @@ generate("random_4x4x4x4", (4, 4, 4, 4), "hot"; reproducible=true, write_observa
 generate("shifts_3x2x4x5", (3, 2, 4, 5), "hot"; reproducible=true, write_shifts=true)
 generate_exp_ta()
 generate_normalize_su3()
+generate_heatbath_statistics()

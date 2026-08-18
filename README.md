@@ -124,6 +124,44 @@ the links are replaced. Cache entry counts are provider-dependent: the pinned
 cpu-faer unconjugated strided path reports zero retained analysis entries even
 though it uses the same cached session and stable slots.
 
+## Quenched SU(3) heatbath
+
+The host-only Wilson heatbath owns no global state: callers provide validated
+parameters and a Julia-compatible four-word RNG. A sweep follows directions
+`0..3`, even sites before odd sites, and the fixed SU(2) subgroup order
+`(0,1)`, `(1,2)`, `(0,2)`:
+
+```rust
+use gaugefields::{
+    cold_su3, heatbath_sweep, normalized_plaquette, HeatbathParams, LatticeShape4,
+    ReproducibleRng,
+};
+
+# fn run() -> Result<(), gaugefields::GaugeError> {
+let lattice = LatticeShape4::new([2, 2, 2, 2])?;
+let mut links = cold_su3(lattice)?;
+let mut rng = ReproducibleRng::from_state([1, 2, 3, 4])?;
+let params = HeatbathParams::new(5.7, 100_000)?;
+let stats = heatbath_sweep(&mut links, params, &mut rng)?;
+println!(
+    "updated={} attempts={} plaquette={}",
+    stats.updated_links,
+    stats.su2_attempts,
+    normalized_plaquette(&links)?,
+);
+# Ok(())
+# }
+```
+
+The update is transactional for link storage and reports total SU(2) rejection
+iterations. It intentionally uses the reviewed open-uniform and square-root
+SU(2) normalization corrections rather than promising bitwise trajectory parity
+with Gaugefields.jl. Regenerate the pinned three-beta statistical oracle with
+`GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia --startup-file=no fixtures/generate.jl heatbath_statistics`.
+Its metadata records all block means, independent Julia seeds, provenance,
+schedule, and the fixed six-standard-error comparison criterion. See
+`examples/quenched_heatbath.rs` for a runnable loop.
+
 ## Quenched SU(3) HMC
 
 HMC is a fixed-step, CPU-first SU(3) API. The caller owns the evolution context
@@ -154,5 +192,5 @@ println!("accepted={accepted}/3 plaquette={}", normalized_plaquette(&links)?);
 Each update uses the exact U-P-U trajectory and an unconditional open-unit
 Metropolis draw. Link and momentum inputs are transactional on trajectory
 failure; rejected proposals restore all links. RNG advancement is not rolled
-back: errors consume only draws completed before the error. Heatbath,
-adaptation, alternate actions, and device-resident HMC are not part of this API.
+back: errors consume only draws completed before the error. Adaptation, alternate
+actions, and device-resident HMC are not part of this API.

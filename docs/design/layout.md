@@ -46,16 +46,21 @@ extension ABI boundaries; `TracedTensor` is graph metadata rather than storage.
 
 Regenerate all checked fixtures portably from a clean shell with
 `GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia --startup-file=no fixtures/generate.jl`;
-the full mode also regenerates `hmc_trajectory`.
+the full mode also regenerates `hmc_trajectory` and `heatbath_statistics`.
 Regenerate only the stdlib RNG metadata with
 `julia --startup-file=no fixtures/generate.jl reproducible_rng`; this focused
 path does not require a Gaugefields.jl checkout and touches no other fixture.
 Regenerate only the HMC oracle with
 `GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia --startup-file=no fixtures/generate.jl hmc_trajectory`;
 this focused path requires the pinned, clean Gaugefields.jl checkout and touches
-only `hmc_trajectory`. The script activates that checkout, rejects tracked dirty
-state, and records the loaded package version and clean checkout commit in every
-metadata file.
+only `hmc_trajectory`. Regenerate the three-beta heatbath oracle with
+`GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia --startup-file=no fixtures/generate.jl heatbath_statistics`;
+that focused path touches only `heatbath_statistics/metadata.json`, calls the
+pinned `Heatbath`/`heatbath!` and `calculate_Plaquette` implementations, and
+stores 32 block means plus their mean and sample standard error for each beta.
+The script activates that checkout, rejects any dirty or untracked state, and
+records the loaded package version and exact checkout commit in every metadata
+file.
 
 TA momentum fields use four independent compact, column-major
 `TypedTensor<f64>` values of shape `[8, NX, NY, NZ, NT]`. The first axis is
@@ -65,7 +70,10 @@ those arrays as `p_initial0.npy`/`p_final0.npy` through direction 3. Proposed
 link arrays live beside them as `u_proposed0.npy` through `u_proposed3.npy`.
 The HMC fixture metadata records the exact RNG state, draw-position words,
 Hamiltonian values, formulas, provenance, and observed absolute comparison
-tolerances.
+tolerances. The heatbath statistics metadata records independent fixed Julia
+seeds, the cold-start/512-burn-in/32x32 measurement schedule, the normalized
+plaquette convention, deliberate Rust corrections, and the fixed six-combined-
+standard-error criterion; it is an oracle, not a bitwise trajectory fixture.
 
 The Julia source roots for this contract are
 `src/4D/nowing/gaugefields_4D_nowing.jl:18` (the rank-six storage type),

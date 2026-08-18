@@ -1,0 +1,78 @@
+{
+  "schema": "heatbath_statistics.v1",
+  "nc": 3,
+  "lattice": [2, 2, 2, 2],
+  "chains": [
+    {
+      "beta": 5.5,
+      "julia_seed": 2026081801,
+      "measurements": 1024,
+      "block_means": [0.5673121300092245, 0.55936107651779, 0.5573879774628696, 0.5746851202085415, 0.5508069677565055, 0.5619811915395286, 0.5708951983252007, 0.5730883044560575, 0.5762374082158152, 0.5650295247693802, 0.5739170930727375, 0.5832204943277017, 0.5703645158521323, 0.5580925028568864, 0.5735567141438542, 0.5647818573338498, 0.5728736333479835, 0.5755655901196546, 0.5661061494549776, 0.564204845559041, 0.5645411019242218, 0.5830508463040416, 0.5564097162384183, 0.5824967047429724, 0.564195741470345, 0.5331226935825185, 0.5717536009713363, 0.571791138388015, 0.5691086318834264, 0.5721658544904876, 0.5579555383306312, 0.5538125790022689],
+      "mean": 0.5668710138330755,
+      "standard_error": 0.001826148282149251
+    },
+    {
+      "beta": 5.7,
+      "julia_seed": 2026081802,
+      "measurements": 1024,
+      "block_means": [0.5908967244965019, 0.5862458460208051, 0.573957572944031, 0.6003023205875736, 0.589813714279793, 0.576112438824803, 0.5749514315717982, 0.5759821229941993, 0.5856602564431721, 0.5713916703811143, 0.6036336407529931, 0.5838679777125987, 0.5937367857936003, 0.602220707527902, 0.5954314137464286, 0.5806110557076936, 0.6034391931501224, 0.594544927185612, 0.6041601885314299, 0.5894247112250988, 0.5971737617419387, 0.5902518161487286, 0.5781945798246859, 0.574390254926998, 0.5827137544629664, 0.5963147193587652, 0.5820771267461408, 0.5958890072307439, 0.5988212021391945, 0.5921699455150129, 0.5865597336673402, 0.5944027623455213],
+      "mean": 0.588916980124541,
+      "standard_error": 0.0017294564524735795
+    },
+    {
+      "beta": 6.0,
+      "julia_seed": 2026081803,
+      "measurements": 1024,
+      "block_means": [0.6126148066716797, 0.6306598532053782, 0.6164369760435304, 0.6270866878397057, 0.6252935103051004, 0.6136431842134884, 0.614533746454315, 0.6159314029275603, 0.6269880315557118, 0.6224411168384758, 0.6124988278232335, 0.6155919612229842, 0.6164632480060772, 0.6178136003640069, 0.6208731821956732, 0.6265718272714715, 0.6051933494210917, 0.6221378595573542, 0.6137338019859967, 0.6071797338707738, 0.6182076375285842, 0.6094366766457192, 0.6247190311105368, 0.624373946973815, 0.6317009635267721, 0.6131694280956983, 0.6220010645241695, 0.6196255208861012, 0.626716189786705, 0.6238166125672417, 0.6105058345319724, 0.6271135196564719],
+      "mean": 0.6192210354252312,
+      "standard_error": 0.0012255777395790456
+    }
+  ],
+  "schedule": {
+    "initial_condition": "cold",
+    "burn_in_sweeps": 512,
+    "blocks": 32,
+    "sweeps_per_block": 32,
+    "measurements": 1024,
+    "measurement": "after each measured heatbath! sweep",
+    "block_statistic": "mean of consecutive plaquette measurements",
+    "standard_error": "sample_stddev(block_means) / sqrt(blocks)",
+    "max_attempts": 100000,
+    "sweep": "Gaugefields.jl Heatbath/heatbath! direction and even-odd schedule"
+  },
+  "comparison": {
+    "criterion": "abs(mean_rust - mean_julia) <= 6 * sqrt(se_rust^2 + se_julia^2)",
+    "sigma_multiplier": 6.0,
+    "rust_max_attempts": 100000,
+    "independent_streams": true,
+    "bitwise_trajectory_parity": false
+  },
+  "gaugefields_jl": {
+    "package": "Gaugefields.jl",
+    "version": "0.7.2",
+    "commit": "9e5719970770f4497405a856315c90bef7f74449",
+    "clean_tracked_worktree": true,
+    "source_paths": ["src/heatbath/heatbathmodule.jl", "src/AbstractGaugefields.jl", "src/4D/nowing/gaugefields_4D_nowing.jl"],
+    "source_urls": ["https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/heatbath/heatbathmodule.jl", "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/AbstractGaugefields.jl", "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/4D/nowing/gaugefields_4D_nowing.jl"],
+    "operations": ["Heatbath", "heatbath!", "calculate_Plaquette"],
+    "iteration_max": "Heatbath constructor default ITERATION_MAX=10^5"
+  },
+  "julia": {
+    "version": "1.12.5",
+    "source_commit": "5fe89b8ddc166260bfcd4a195b305aff0ccad686",
+    "rng": "Random.seed!(seed) on Julia's default task-local RNG"
+  },
+  "normalization": "calculate_Plaquette(U, temp1, temp2) / (6 * NV * NC)",
+  "deliberate_corrections": [
+    "Rust omits the four unused preliminary draws before the Julia rejection loop",
+    "Rust normalizes projected SU(2) matrices by sqrt(abs2(alpha) + abs2(beta))",
+    "Rust rejects zero or singular staples and non-finite intermediates",
+    "Rust maps xoshiro words to open uniforms instead of permitting rand() == 0",
+    "Rust takes an explicit ReproducibleRng instead of Julia's global RNG"
+  ],
+  "generator": {
+    "script": "fixtures/generate.jl",
+    "mode": "heatbath_statistics",
+    "reimplementation": false
+  }
+}

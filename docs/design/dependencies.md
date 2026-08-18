@@ -24,9 +24,13 @@ into that runtime; no backend or extension fallback is hidden in gaugefields.
 Phase 1 reproducible RNG support is implemented with the normal dependencies
 `rand` 0.8 and `rand_xoshiro` 0.6. `rand` default features are disabled because
 the public wrapper uses only `RngCore` and `Error`; this also avoids pulling the
-unused `rand_chacha` standard RNG. HMC uses the same wrapper's open-unit and
-uncached Box--Muller methods. No distribution, serialization, generic RNG, or
-ChaCha dependency is added.
+unused `rand_chacha` standard RNG. HMC uses the wrapper's open-unit and
+uncached Box--Muller methods; the SU(3) heatbath uses its open-unit method.
+Heatbath sampling adds no distribution, serialization, generic RNG, or sampler
+dependency. The heatbath API accepts only the existing `ReproducibleRng`, and
+its Julia statistical fixture is produced by the already-pinned external
+Gaugefields.jl checkout rather than by a Rust-side Julia or heatbath
+reimplementation.
 
 Future accelerator work reserves backend-specific feature names. Neither CUDA
 nor ROCm is implemented or declared in this manifest today; adding one requires

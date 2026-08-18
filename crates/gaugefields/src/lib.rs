@@ -8,6 +8,7 @@ mod extension;
 mod field;
 mod fixture;
 mod force;
+mod heatbath;
 mod hmc;
 mod index;
 mod kernel;
@@ -25,6 +26,7 @@ pub use field::{
 };
 pub use fixture::{load_fixture, Fixture, FixtureMetadata};
 pub use force::{action_gradient, dsdu, gauge_force};
+pub use heatbath::{heatbath_sweep, HeatbathParams, HeatbathSweepStats};
 pub use hmc::{
     hamiltonian, hmc_update, kinetic_energy, leapfrog_trajectory, sample_momentum, HmcOutcome,
     HmcParams,

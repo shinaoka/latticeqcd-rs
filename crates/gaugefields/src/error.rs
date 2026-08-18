@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-/// Gauge-field, HMC, fixture, runtime, and RNG-state failures.
+/// Gauge-field, HMC, heatbath, fixture, runtime, and RNG-state failures.
 #[derive(Debug, thiserror::Error)]
 pub enum GaugeError {
     #[error("reproducible RNG state must not be all zero")]
@@ -64,6 +64,24 @@ pub enum GaugeError {
     },
     #[error("beta must be finite, found {found}")]
     NonFiniteBeta { found: f64 },
+    #[error("heatbath beta must be positive, found {found}")]
+    NonPositiveHeatbathBeta { found: f64 },
+    #[error("heatbath requires at least one rejection attempt")]
+    ZeroHeatbathAttempts,
+    #[error("heatbath requires an even extent on axis {axis}, found {extent}")]
+    OddHeatbathExtent { axis: usize, extent: usize },
+    #[error(
+        "heatbath staple is singular at direction {direction}, site {site}, subgroup {subgroup}"
+    )]
+    SingularHeatbathStaple {
+        direction: usize,
+        site: usize,
+        subgroup: usize,
+    },
+    #[error("heatbath exceeded finite numerical range during {stage}")]
+    HeatbathNumericalRange { stage: &'static str },
+    #[error("heatbath rejection limit exhausted after {max_attempts} attempts")]
+    HeatbathRejectionLimit { max_attempts: usize },
     #[error("HMC step size must be finite, found {found}")]
     NonFiniteStepSize { found: f64 },
     #[error("HMC step size must be positive, found {found}")]
