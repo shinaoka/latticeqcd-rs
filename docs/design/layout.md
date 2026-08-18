@@ -22,9 +22,11 @@ transposing. Metadata records `nc`, lattice extents, beta, expected observables,
 Gaugefields.jl version, and the exact Gaugefields.jl Git commit. Metadata and
 all four array shapes must agree.
 
-`fixtures/generate.jl` is the authority for checked Julia fixtures. Data not
-produced by that script against Gaugefields.jl must not claim Julia provenance.
-The checked `random_2x2x2x2` fixture stores exact IEEE-754 reference bits for
+`fixtures/generate.jl` is the authority for checked fixtures. Gauge-field
+fixtures produced by that script against Gaugefields.jl record the exact
+Gaugefields.jl provenance; the separate `reproducible_rng` metadata fixture is
+stdlib-only and records Julia `Random.Xoshiro` provenance instead. The checked
+`random_2x2x2x2` fixture stores exact IEEE-754 reference bits for
 every component. Gaugefields.jl's reproducible initializer resets the same RNG
 for each direction, so the generator applies a direction-specific periodic
 site shift; this preserves the random SU(3) matrices while making direction and
@@ -44,8 +46,12 @@ extension ABI boundaries; `TracedTensor` is graph metadata rather than storage.
 
 Regenerate all checked fixtures portably from a clean shell with
 `GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia fixtures/generate.jl`.
-The script activates that checkout, rejects tracked dirty state, and records
-the loaded package version and clean checkout commit in every metadata file.
+Regenerate only the stdlib RNG metadata with
+`julia --startup-file=no fixtures/generate.jl reproducible_rng`; this focused
+path does not require a Gaugefields.jl checkout and touches no other fixture.
+The script activates that checkout for the gauge-field path, rejects tracked
+dirty state, and records the loaded package version and clean checkout commit
+in every metadata file.
 
 The Julia source roots for this contract are
 `src/4D/nowing/gaugefields_4D_nowing.jl:18` (the rank-six storage type),

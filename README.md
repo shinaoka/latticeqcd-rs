@@ -14,6 +14,40 @@ Until the API stabilizes, compatibility is clean-break rather than emulation:
 gaugefields-rs targets its recorded tenferro revision and does not carry shims
 for older or newer tenferro APIs.
 
+## Reproducible random streams
+
+`ReproducibleRng` imports Julia's four-word `(s0, s1, s2, s3)` xoshiro256++
+state in little-endian order. With Julia 1.12.5, dump those 256 state bits
+before drawing values:
+
+```julia
+using Random
+rng = Xoshiro(123)
+state = (rng.s0, rng.s1, rng.s2, rng.s3)
+@show state
+```
+
+Pass the four printed `UInt64` words to Rust in the same order. The Rust wrapper
+exposes the raw `RngCore` stream, the exact open-unit mapping, and an uncached
+Box--Muller normal stream:
+
+```rust
+use gaugefields::ReproducibleRng;
+use rand::RngCore;
+
+let mut rng = ReproducibleRng::from_state([1, 2, 3, 4])?;
+assert_eq!(rng.next_u64(), 41_943_041);
+let mut normals = [0.0; 3];
+rng.fill_standard_normals(&mut normals);
+assert!(normals.into_iter().all(f64::is_finite));
+# Ok::<(), gaugefields::GaugeError>(())
+```
+
+An odd normal-fill length discards the final sine result and still consumes a
+complete pair. All-zero states are rejected; state replacement is transactional.
+This primitive does not add a global RNG or change the private HMC regression
+support.
+
 ## Direct and traced Wilson action
 
 `GaugeLinks` owns four compact host `TypedTensor<Complex64>` values. Direct

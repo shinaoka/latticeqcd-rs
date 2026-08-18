@@ -14,6 +14,7 @@ mod index;
 mod kernel;
 mod mat3;
 mod observables;
+mod rng;
 
 #[cfg(feature = "autodiff")]
 pub use ad::ad_rules;
@@ -28,3 +29,4 @@ pub use force::{action_gradient, dsdu, gauge_force};
 pub use index::{coords_from_site_index, load_link, neighbor_site, site_index, store_link};
 pub use mat3::Mat3;
 pub use observables::{measurement_staple, normalized_plaquette, plaquette_sum, wilson_action};
+pub use rng::ReproducibleRng;

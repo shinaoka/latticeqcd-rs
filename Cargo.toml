@@ -9,6 +9,8 @@ repository = "https://github.com/shinaoka/latticeqcd-rs"
 
 [workspace.dependencies]
 num-complex = "0.4"
+rand = "0.8"
+rand_xoshiro = "0.6"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -1,0 +1,18 @@
+{
+  "julia_version": "1.12.5",
+  "julia_commit": "5fe89b8ddc166260bfcd4a195b305aff0ccad686",
+  "julia_source": {"url": "https://github.com/JuliaLang/julia/blob/5fe89b8ddc166260bfcd4a195b305aff0ccad686/stdlib/Random/src/Xoshiro.jl", "revision": "5fe89b8ddc166260bfcd4a195b305aff0ccad686"},
+  "algorithm": "xoshiro256++",
+  "rand_xoshiro_version": "0.6.0",
+  "rand_xoshiro_source": "https://docs.rs/rand_xoshiro/0.6.0",
+  "state": [1, 2, 3, 4],
+  "state_word_order": "Julia (s0, s1, s2, s3), each word encoded little-endian",
+  "state_note": "Julia s4 is auxiliary splitmix/task-fork state and is not imported",
+  "raw_generation": "explicit scalar loop calling rand(rng, UInt64) once per word; no array or bulk generation",
+  "raw_outputs": ["0x0000000002800001", "0x0000000003800067", "0x000cc00003800067", "0x000cc201994400b2", "0x8012a2019ac433cd", "0x8a69978acdee33ba", "0xc271134733154abd", "0xac2ba09179169e97", "0xdbf3190a8f073fd8", "0x9105f14ab2229220"],
+  "uniform_formula": "u = (Float64(next_u64 >> 12) + 0.5) * 2^-52",
+  "box_muller": {"u_order": "u1 then u2", "pair_order": "[r*cos(TAU*u2), r*sin(TAU*u2)]", "odd_fill_policy": "fill the cosine result and discard the final sine result"},
+  "normal_values": [7.3225060824270685, 1.4646133012571316e-10, 4.133959558893577, 0.005056423296303073, -1.1387026119001293, -0.29751266842190915, -0.3468868460125278, -0.6555605619658463, -0.5035666330633589, -0.22355909488958678],
+  "normal_bits": ["0x401d4a3f08d32430", "0x3de421266230c592", "0x4010892cb1d1bced", "0x3f74b60b4b13e204", "0xbff238203adfb181", "0xbfd30a7293412380", "0xbfd63364e2c2544b", "0xbfe4fa5a24c61a25", "0xbfe01d37c58ba58d", "0xbfcc9d959ca316e3"],
+  "normal_comparison_tolerance": 1e-14
+}

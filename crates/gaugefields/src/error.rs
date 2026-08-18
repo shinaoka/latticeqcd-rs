@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-/// Validation and fixture-loading failures.
+/// Gauge-field, fixture, runtime, and RNG-state failures.
 #[derive(Debug, thiserror::Error)]
 pub enum GaugeError {
+    #[error("reproducible RNG state must not be all zero")]
+    InvalidRngState,
     #[error("lattice extent on axis {axis} must be positive")]
     InvalidExtent { axis: usize },
     #[error("lattice volume overflows usize")]

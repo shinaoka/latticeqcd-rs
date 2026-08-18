@@ -1,4 +1,77 @@
 import Pkg
+import Random
+
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"])
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng]")
+end
+
+hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
+json_string_array(values) = "[" * join([string(Char(34), value, Char(34)) for value in values], ", ") * "]"
+
+function generate_reproducible_rng()
+    out = joinpath(@__DIR__, "reproducible_rng")
+    mkpath(out)
+    state = (UInt64(1), UInt64(2), UInt64(3), UInt64(4))
+
+    raw_rng = Random.Xoshiro(state...)
+    raw = UInt64[]
+    for _ in 1:10
+        push!(raw, Random.rand(raw_rng, UInt64))
+    end
+
+    normal_rng = Random.Xoshiro(state...)
+    normals = Float64[]
+    for _ in 1:5
+        raw_u1 = Random.rand(normal_rng, UInt64)
+        raw_u2 = Random.rand(normal_rng, UInt64)
+        u1 = (Float64(raw_u1 >>> 12) + 0.5) * 2.0^-52
+        u2 = (Float64(raw_u2 >>> 12) + 0.5) * 2.0^-52
+        radius = sqrt(-2.0 * log(u1))
+        theta = 2π * u2
+        push!(normals, radius * cos(theta))
+        push!(normals, radius * sin(theta))
+    end
+
+    julia_commit = string(Base.GIT_VERSION_INFO.commit)
+    raw_hex = hex_word.(raw)
+    normal_bits = hex_word.(reinterpret.(UInt64, normals))
+    q = Char(34)
+    open(joinpath(out, "metadata.json"), "w") do io
+        println(io, "{")
+        println(io, "  ", q, "julia_version", q, ": ", q, Base.VERSION, q, ",")
+        println(io, "  ", q, "julia_commit", q, ": ", q, julia_commit, q, ",")
+        println(io, "  ", q, "julia_source", q, ": {", q, "url", q, ": ", q,
+            "https://github.com/JuliaLang/julia/blob/$julia_commit/stdlib/Random/src/Xoshiro.jl", q,
+            ", ", q, "revision", q, ": ", q, julia_commit, q, "},")
+        println(io, "  ", q, "algorithm", q, ": ", q, "xoshiro256++", q, ",")
+        println(io, "  ", q, "rand_xoshiro_version", q, ": ", q, "0.6.0", q, ",")
+        println(io, "  ", q, "rand_xoshiro_source", q, ": ", q, "https://docs.rs/rand_xoshiro/0.6.0", q, ",")
+        println(io, "  ", q, "state", q, ": [1, 2, 3, 4],")
+        println(io, "  ", q, "state_word_order", q, ": ", q,
+            "Julia (s0, s1, s2, s3), each word encoded little-endian", q, ",")
+        println(io, "  ", q, "state_note", q, ": ", q,
+            "Julia s4 is auxiliary splitmix/task-fork state and is not imported", q, ",")
+        println(io, "  ", q, "raw_generation", q, ": ", q,
+            "explicit scalar loop calling rand(rng, UInt64) once per word; no array or bulk generation", q, ",")
+        println(io, "  ", q, "raw_outputs", q, ": ", json_string_array(raw_hex), ",")
+        println(io, "  ", q, "uniform_formula", q, ": ", q,
+            "u = (Float64(next_u64 >> 12) + 0.5) * 2^-52", q, ",")
+        println(io, "  ", q, "box_muller", q, ": {", q, "u_order", q, ": ", q, "u1 then u2", q,
+            ", ", q, "pair_order", q, ": ", q, "[r*cos(TAU*u2), r*sin(TAU*u2)]", q,
+            ", ", q, "odd_fill_policy", q, ": ", q,
+            "fill the cosine result and discard the final sine result", q, "},")
+        println(io, "  ", q, "normal_values", q, ": [", join(repr.(normals), ", "), "],")
+        println(io, "  ", q, "normal_bits", q, ": ", json_string_array(normal_bits), ",")
+        println(io, "  ", q, "normal_comparison_tolerance", q, ": 1e-14")
+        println(io, "}")
+    end
+end
+
+if ARGS == ["reproducible_rng"]
+    generate_reproducible_rng()
+    exit()
+end
+
 const REQUESTED_CHECKOUT = get(ENV, "GAUGEFIELDS_JL_DIR", nothing)
 isnothing(REQUESTED_CHECKOUT) && error("set GAUGEFIELDS_JL_DIR to a clean Gaugefields.jl checkout")
 Pkg.activate(REQUESTED_CHECKOUT)
@@ -203,6 +276,7 @@ function generate_normalize_su3()
     end
 end
 
+generate_reproducible_rng()
 generate("cold_1x1x1x1", (1, 1, 1, 1), "cold")
 generate("random_2x2x2x2", (2, 2, 2, 2), "hot"; reproducible=true, write_observables=true)
 generate("random_4x4x4x4", (4, 4, 4, 4), "hot"; reproducible=true, write_observables=true)

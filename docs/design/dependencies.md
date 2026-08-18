@@ -21,6 +21,12 @@ program compilation, the application-owned `Runtime`, backend registration, and
 the checked example use their APIs. Extension modules are installed explicitly
 into that runtime; no backend or extension fallback is hidden in gaugefields.
 
+Phase 1 reproducible RNG support is implemented with the normal dependencies
+`rand` 0.8 and `rand_xoshiro` 0.6. The public wrapper uses only
+`Xoshiro256PlusPlus` and `RngCore`; no distribution, serialization, or generic
+RNG dependency is added. `rand_chacha` remains dev-only for the existing
+crate-private HMC regression support.
+
 Future accelerator work reserves backend-specific feature names. Neither CUDA
 nor ROCm is implemented or declared in this manifest today; adding one requires
 an explicit placement-aware design rather than an umbrella feature or implicit
