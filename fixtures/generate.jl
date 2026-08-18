@@ -1,8 +1,8 @@
 import Pkg
 import Random
 
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"])
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"])
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -75,8 +75,15 @@ end
 
 const REQUESTED_CHECKOUT = get(ENV, "GAUGEFIELDS_JL_DIR", nothing)
 isnothing(REQUESTED_CHECKOUT) && error("set GAUGEFIELDS_JL_DIR to a clean Gaugefields.jl checkout")
+const WILSONLOOP_CHECKOUT = get(
+    ENV,
+    "WILSONLOOP_JL_DIR",
+    joinpath(dirname(abspath(REQUESTED_CHECKOUT)), "Wilsonloop.jl"),
+)
+isdir(WILSONLOOP_CHECKOUT) || error("expected Wilsonloop.jl checkout at $WILSONLOOP_CHECKOUT")
 Pkg.activate(REQUESTED_CHECKOUT)
 using Gaugefields
+import Wilsonloop
 import Gaugefields.Temporalfields_module: get_temp
 using NPZ
 using LinearAlgebra
@@ -105,6 +112,17 @@ const CHECKOUT = dirname(dirname(pathof(Gaugefields)))
 const COMMIT = readchomp(`git -C $CHECKOUT rev-parse HEAD`)
 const DIRTY = read(`git -C $CHECKOUT status --porcelain --untracked-files=all`, String)
 isempty(strip(DIRTY)) || error("refusing fixture provenance from dirty Gaugefields.jl checkout: $CHECKOUT")
+const WILSONLOOP_VERSION = string(Base.pkgversion(Wilsonloop))
+const WILSONLOOP_SOURCE = dirname(dirname(pathof(Wilsonloop)))
+const WILSONLOOP_COMMIT = readchomp(`git -C $WILSONLOOP_CHECKOUT rev-parse HEAD`)
+const WILSONLOOP_DIRTY = read(
+    `git -C $WILSONLOOP_CHECKOUT status --porcelain --untracked-files=all`,
+    String,
+)
+isempty(strip(WILSONLOOP_DIRTY)) || error("refusing fixture provenance from dirty Wilsonloop.jl checkout: $WILSONLOOP_CHECKOUT")
+read(joinpath(WILSONLOOP_SOURCE, "src", "Wilsonloop.jl")) ==
+    read(joinpath(WILSONLOOP_CHECKOUT, "src", "Wilsonloop.jl")) ||
+    error("active Wilsonloop.jl source does not match the pinned checkout")
 
 function distinguish_reproducible_directions!(links)
     # Gaugefields.jl deliberately resets StableRNG(123) for each direction.
@@ -232,6 +250,87 @@ end
 
 if ARGS == ["ildg"]
     generate_ildg_fixture()
+    exit()
+end
+
+const WILSONLOOP_TASK_B_JULIA_COMMIT = "e1a617fdedb19b785f89bdeb13c30e53b20743a7"
+const WILSONLOOP_TASK_B_GAUGEFIELDS_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
+
+function generate_wilsonloop_task_b()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == WILSONLOOP_TASK_B_GAUGEFIELDS_COMMIT ||
+        error("expected Gaugefields.jl commit $WILSONLOOP_TASK_B_GAUGEFIELDS_COMMIT, found $COMMIT")
+    WILSONLOOP_VERSION == "0.1.5" ||
+        error("expected Wilsonloop.jl v0.1.5, found $WILSONLOOP_VERSION")
+    WILSONLOOP_COMMIT == WILSONLOOP_TASK_B_JULIA_COMMIT ||
+        error("expected Wilsonloop.jl commit $WILSONLOOP_TASK_B_JULIA_COMMIT, found $WILSONLOOP_COMMIT")
+
+    lattice = (2, 2, 2, 2)
+    links = Initialize_Gaugefields(NC, 0, lattice...; condition="hot", randomnumber="Reproducible")
+    distinguish_reproducible_directions!(links)
+    julia_plaquette_coefficient = 0.365
+    julia_rectangle_coefficient = -0.155
+
+    gauge_action = GaugeAction(links)
+    for mu in 1:3, nu in (mu + 1):4
+        plaquette = Wilsonloop.make_plaq(mu, nu)
+        rectangle_nu_long = Wilsonloop.Wilsonline([(mu, 1), (nu, 2), (mu, -1), (nu, -2)])
+        rectangle_mu_long = Wilsonloop.Wilsonline([(mu, 2), (nu, 1), (mu, -2), (nu, -1)])
+        push!(gauge_action, julia_plaquette_coefficient, [plaquette, plaquette'])
+        push!(gauge_action, julia_rectangle_coefficient, [rectangle_nu_long, rectangle_nu_long'])
+        push!(gauge_action, julia_rectangle_coefficient, [rectangle_mu_long, rectangle_mu_long'])
+    end
+
+    force = initialize_TA_Gaugefields(links)
+    out = joinpath(@__DIR__, "wilsonloop_task_b")
+    mkpath(out)
+    for mu in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(mu - 1).npy"), links[mu].U)
+        derivative = similar(links[1])
+        Gaugefields.calc_dSdUμ!(derivative, gauge_action, mu, links)
+        NPZ.npzwrite(joinpath(out, "dsdu$(mu - 1).npy"), derivative.U)
+        product = similar(links[1])
+        mul!(product, links[mu], derivative)
+        clear_U!(force[mu])
+        Traceless_antihermitian_add!(force[mu], 1.0, product)
+        NPZ.npzwrite(joinpath(out, "force_coeff$(mu - 1).npy"), force[mu].a)
+    end
+
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n")
+        print(io, "  \"schema\": \"wilsonloop_task_b.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"condition\": \"hot\",\n")
+        print(io, "  \"randomnumber\": \"Reproducible\",\n")
+        print(io, "  \"direction_disambiguation\": \"direction mu is periodically shifted by +1 along axis mu\",\n")
+        print(io, "  \"gaugefields_jl\": {\"version\": \"$VERSION\", \"commit\": \"$COMMIT\", \"clean\": true},\n")
+        print(io, "  \"wilsonloop_jl\": {\"version\": \"$WILSONLOOP_VERSION\", \"commit\": \"$WILSONLOOP_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"source_urls\": [\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/action/GaugeActions.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/TA_gaugefields_4D_serial.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/Wilsonloop.jl/blob/$WILSONLOOP_COMMIT/src/Wilsonloop.jl\"\n")
+        print(io, "  ],\n")
+        print(io, "  \"source_functions\": [\"GaugeAction\", \"calc_dSdUμ!\", \"Traceless_antihermitian_add!\", \"make_plaq\", \"Wilsonline\"],\n")
+        print(io, "  \"planes\": [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]],\n")
+        print(io, "  \"per_plane_terms\": [\n")
+        print(io, "    {\"name\": \"plaquette\", \"steps_template\": [\"mu\", \"nu\", \"-mu\", \"-nu\"], \"julia_coefficient_f\": 0.365, \"rust_coefficient_c\": 0.73},\n")
+        print(io, "    {\"name\": \"rectangle_nu_long\", \"steps_template\": [\"mu\", \"nu\", \"nu\", \"-mu\", \"-nu\", \"-nu\"], \"julia_coefficient_f\": -0.155, \"rust_coefficient_c\": -0.31},\n")
+        print(io, "    {\"name\": \"rectangle_mu_long\", \"steps_template\": [\"mu\", \"mu\", \"nu\", \"-mu\", \"-mu\", \"-nu\"], \"julia_coefficient_f\": -0.155, \"rust_coefficient_c\": -0.31}\n")
+        print(io, "  ],\n")
+        print(io, "  \"expanded_rust_terms\": 18,\n")
+        print(io, "  \"coefficient_mapping\": \"Rust c=2*f because Julia inserts f*W and f*W†; Rust evaluates c*sum_x Re tr(W)\",\n")
+        print(io, "  \"force_mapping\": \"Julia calc_dSdU is holomorphic: each Rust occurrence uses c/2=f; for U -> exp((i/2)sum(v_a lambda_a)t)U, dS/dt=-sum(force_a v_a)\",\n")
+        print(io, "  \"layout\": {\"links\": \"ComplexF64 Fortran [row,column,x,y,z,t]\", \"force\": \"Float64 Fortran [gell_mann_component,x,y,z,t]\", \"site_order\": \"x fastest\"},\n")
+        print(io, "  \"files\": [\"u0.npy\", \"u1.npy\", \"u2.npy\", \"u3.npy\", \"dsdu0.npy\", \"dsdu1.npy\", \"dsdu2.npy\", \"dsdu3.npy\", \"force_coeff0.npy\", \"force_coeff1.npy\", \"force_coeff2.npy\", \"force_coeff3.npy\"],\n")
+        print(io, "  \"comparison\": {\"force_component_tolerance\": 2e-12, \"derivative_component_tolerance\": 2e-12, \"criterion\": \"maximum absolute residual over every direction/site/component\"},\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"wilsonloop_task_b\", \"oracle_only\": true}\n")
+        print(io, "}\n")
+    end
+end
+
+if ARGS == ["wilsonloop_task_b"]
+    generate_wilsonloop_task_b()
     exit()
 end
 
@@ -679,3 +778,4 @@ generate_exp_ta()
 generate_normalize_su3()
 generate_heatbath_statistics()
 generate_ildg_fixture()
+generate_wilsonloop_task_b()

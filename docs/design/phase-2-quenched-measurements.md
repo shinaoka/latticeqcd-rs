@@ -310,19 +310,21 @@ checked displacement/allocation overflow are typed errors.
 ### Analytic force
 
 For each occurrence of a link, cyclically rotate the loop product to the
-varied link. Under the left variation `U -> exp(t A) U`:
+varied link. Gaugefields.jl `calc_dSdUμ!` is the holomorphic derivative: for a
+real Julia coefficient `f`, `Gradientflow_general` inserts both `f * W` and
+`f * W†`, while the derivative with respect to `U` receives the contribution
+from the holomorphic member. One Rust term therefore has scalar-action
+`coefficient = c = 2*f`, but each force occurrence uses `f = c/2`:
 
-- a forward occurrence contributes `TA(U * after * before)`,
-- a backward occurrence contributes `-TA(after * before * U^dagger)`.
+- a forward occurrence contributes `(c/2) * TA(U * after * before)`,
+- a backward occurrence contributes `-(c/2) * TA(after * before * U^dagger)`.
 
-Contributions are multiplied by the term coefficient and accumulated into the
-existing eight-component `TaGaugeField` convention. This is the **positive**
-action gradient: Gaugefields.jl `calc_dSdUμ!` adds `beta * staple`, and
-`F_update!` forms `TA(U * dS/dU)` without a minus sign. The negative flow
-direction appears only in the RK3 stage coefficients below. For a real Julia
-coefficient `f`, `Gradientflow_general` inserts both `f * W` and `f * W†`; this
-maps to one Rust term with `coefficient = 2*f` under the documented
-`coefficient * Re tr(W)` meaning.
+The matrices are accumulated into the existing eight-component `TaGaugeField`
+convention. This is the **positive** Gaugefields.jl force
+`TA(U * calc_dSdU)`, without a minus sign. For a left variation
+`U -> exp((i/2) sum_a(v_a lambda_a) t) U`, the corresponding real scalar
+action obeys `dS/dt = -sum_a(force_a * v_a)`. The negative flow direction
+appears only in the RK3 stage coefficients below.
 
 A centered finite-difference test for independent Gell-Mann directions, sites,
 and both plaquette and rectangle terms fixes sign and normalization. It checks

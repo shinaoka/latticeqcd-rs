@@ -8,7 +8,23 @@ The `gaugefields` crate ports algorithms and conventions from
 [Gaugefields.jl](https://github.com/shinaoka/Gaugefields.jl), distributed under
 the MIT License. Copyright (c) 2022 Akio Tomiya and Yuki Nagai. The original
 notice is preserved in [`crates/gaugefields/LICENSE`](crates/gaugefields/LICENSE),
-and pinned source revisions are recorded with each Julia oracle.
+and pinned source revisions are recorded with each Julia oracle. The `wilsonloop`
+crate follows the signed-path and plaquette/rectangle conventions of
+[Wilsonloop.jl](https://github.com/akio-tomiya/Wilsonloop.jl), distributed under
+the MIT License; its applicable notice is preserved in
+[`crates/wilsonloop/LICENSE`](crates/wilsonloop/LICENSE).
+
+## Signed Wilson paths and loop actions
+
+The `wilsonloop` crate provides periodic signed unit paths (`-4..=-1` and
+`1..=4`), closed plaquette/1x2 rectangle terms, `LoopAction` values with
+precompiled occurrence metadata, and host-side action values and forces. A
+term means `c * sum_x Re tr(W)`; matching a Julia real coefficient `f` that
+adds both `W` and `W†` uses `c = 2f`. Because Julia's `calc_dSdU` is the
+holomorphic derivative, each force occurrence uses `c/2 = f`; the corresponding
+left variation obeys `dS/dt = -F·v`. The pinned multi-term oracle and all
+`4 * 16 * 8` force components are checked in
+[`fixtures/wilsonloop_task_b`](fixtures/wilsonloop_task_b).
 
 ## Compatibility policy
 

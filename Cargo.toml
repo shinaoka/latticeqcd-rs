@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gaugefields"]
+members = ["crates/gaugefields", "crates/wilsonloop"]
 resolver = "2"
 
 [workspace.package]

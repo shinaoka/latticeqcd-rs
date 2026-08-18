@@ -1384,6 +1384,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wilsonloop"
+version = "0.1.0"
+dependencies = [
+ "gaugefields",
+ "npyz",
+ "num-complex",
+ "serde_json",
+]
+
+[[package]]
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"

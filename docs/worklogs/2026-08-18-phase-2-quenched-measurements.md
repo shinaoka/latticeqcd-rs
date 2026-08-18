@@ -1,6 +1,6 @@
 # Phase 2 quenched measurements worklog
 
-Status: Task A complete; Task B implementation pending
+Status: Task B complete; Task C implementation pending
 
 ## Base and scope
 
@@ -52,7 +52,7 @@ Result: 123 passed, 1 ignored, including 15 doctests.
 | Task | Design document | Pre-implementation reviewer | Pre verdict | Post implementation verdict |
 |---|---|---|---|---|
 | A: host view and ILDG | Phase 2 design, Task A | reviewer-flash | Correct-to-merge | Correct-to-merge |
-| B: Wilson paths/actions/force | Phase 2 design, Task B | reviewer-flash | Correct-to-merge | pending |
+| B: Wilson paths/actions/force | Phase 2 design, Task B | reviewer-flash | Correct-to-merge | Correct-to-merge |
 | C: stout | Phase 2 design, Task C | reviewer-flash | Correct-to-merge | pending |
 | D: measurements/flow/validation | Phase 2 design, Task D | reviewer-flash | Correct-to-merge | pending |
 | Integrated branch | Phase 2 design | reviewer-flash | Correct-to-merge | pending |
@@ -157,4 +157,100 @@ component-count prose, classify tensor duplication failures as tensor errors,
 reuse the canonical site-index helper, add README discoverability, and mention
 the debug-profile tradeoff in the PR. All findings were applied. The delta
 re-review found no remaining finding and recorded `Correct-to-merge`; the Task A
+post-implementation gate is closed.
+
+## Task B implementation
+
+Task B adds the downward-only `wilsonloop` crate. `WilsonPath` owns a nonempty
+validated sequence of signed unit directions `±1..±4`, checked displacement,
+adjoint, plaquette, and both 1x2 rectangle helpers. `LoopTerm` requires a finite
+real coefficient and closed path. `LoopAction` is nonempty, `Clone + Debug`, and
+precompiles one occurrence table per term. Public evaluation obtains one
+`GaugeLinks::host_view()` and never exposes or reindexes tensor storage. Force
+execution allocates prefix/suffix matrix scratch once per term and reuses it;
+site loops allocate no heap and evaluate each path in linear rather than
+quadratic path length.
+
+The scalar convention is exactly `c * sum_x Re tr(W)`. Pinned Julia inserts
+`f*W + f*W†`, hence `c=2*f`. Fixture comparison exposed an important
+holomorphic-derivative detail that the approved design text had stated too
+coarsely: Gaugefields.jl `calc_dSdU` contributes `f=c/2` per occurrence to
+`TA(U*dS/dU)`. The implementation and corrected design therefore use
+`+(c/2) TA(U*after*before)` for forward occurrences and
+`-(c/2) TA(after*before*U†)` for backward occurrences. Under
+`U -> exp((i/2) sum_a(v_a lambda_a)t) U`, the independent real scalar action
+obeys `dS/dt = -sum_a(F_a v_a)`. The negative flow sign remains owned by the
+future RK3 stage coefficients, not by `loop_action_force`.
+
+The only general support added to `gaugefields::TaGaugeField` is checked zero
+allocation, checked per-site coefficient accumulation/readback, and existing
+tensor interop access. The Wilson implementation reuses `HostGaugeLinks`,
+`Mat3`, its TA/Gell-Mann mapping, and `TaGaugeField`; it adds no alternate
+matrix, indexing, plaquette, or staple path.
+
+### Task B deterministic oracle
+
+`fixtures/generate.jl wilsonloop_task_b` pins clean checkouts of:
+
+- Gaugefields.jl v0.7.2 `9e5719970770f4497405a856315c90bef7f74449`
+- Wilsonloop.jl v0.1.5 `e1a617fdedb19b785f89bdeb13c30e53b20743a7`
+
+The oracle uses the direction-distinct reproducible `2^4` SU(3) links and all
+six `(mu,nu)` planes. Every plane contains one plaquette and both 1x2 rectangle
+orientations, for 18 Rust terms; coefficients are `c=0.73` and `c=-0.31`
+(`f=0.365` and `f=-0.155` in Julia). Thus all four force directions are
+nonzero. Rust checks every source link, every Julia `calc_dSdU` matrix, every
+stored Julia TA coefficient, and every one of the `4*16*8` Rust force
+coefficients. Maximum residuals were:
+
+- Julia `TA(U*calc_dSdU)` versus stored Julia coefficients:
+  `4.44089209850062616e-16`
+- Rust force versus stored Julia coefficients:
+  `6.66133814775093924e-16`
+- independent centered Gell-Mann left variations over plaquette and mixed
+  plaquette/rectangle actions: `4.10362410718789761e-10`
+
+Both focused generator runs produced Task B tree hash
+`c93b425937b798a0026091db768dca9eba4e3886d832c07a39ff28d24a9067d1`.
+Both complete default generator runs produced fixture-tree hash
+`0338314f862cd4474e9b283d0b47cb454343a3b7221c144ab413da0efc6e5bf9`.
+Commands set `GAUGEFIELDS_JL_DIR`, `WILSONLOOP_JL_DIR`, and
+`JULIA_NUM_THREADS=1` explicitly.
+
+Task B fixture SHA-256 values:
+
+- `dsdu0.npy`: `bdaadc3c51dac7543a601407fccb9ed328dff9c09b350bd3b2227be2759262c4`
+- `dsdu1.npy`: `8972791ff2a8e8b4ce9b1acbd86c9001c40d0e87f56c0770eb7ebf50aa497251`
+- `dsdu2.npy`: `25d8840fa61d92efa806476f619ec149b4b2211b5f81c257c808e8c3462b546b`
+- `dsdu3.npy`: `77489a69b867f164338ae017dce17c90b9eae394ba6722ee912b08df47643c8d`
+- `force_coeff0.npy`: `776ee29be6138d0e767e5e1e951ef4b2d63df20a77b3867c64d0bcb4d99bba9b`
+- `force_coeff1.npy`: `c4c367c7bc0c1d2f5861956baf2213667245fba0e11750d6c40683ce04a1c4c1`
+- `force_coeff2.npy`: `10bbb3b7b353aeb2bd8bf5a270234caee5d071c103fd0013bc064a5877d87788`
+- `force_coeff3.npy`: `7eaee778002bc01f914e51fc07daf7a1901e77dda0a7a81e527185396734f089`
+- `metadata.json`: `8239fc58bf70382056e0aabfa9772e6e16dbbc580a6277c417bc10c633f5758b`
+- `u0..u3.npy`: exactly the existing direction-distinct `random_2x2x2x2`
+  values (`2d767b...`, `8ade4c...`, `1efe6d...`, `dd432d...`).
+
+### Task B local gates
+
+- `cargo fmt --all -- --check`: passed.
+- `cargo check --workspace`: passed.
+- `cargo test --workspace`: 160 passed, 1 ignored, including 33 doctests.
+- `cargo test --workspace --all-features`: 170 passed, 1 ignored, including
+  33 doctests.
+- `cargo test --workspace --doc --all-features`: 33 passed.
+- `cargo test -p wilsonloop --all-features`: 25 passed, including 12 doctests.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
+  passed.
+- `cargo doc --workspace --all-features --no-deps`: passed.
+- `cargo build --workspace --examples --all-features`: passed.
+- `git diff --check`: passed.
+
+The first Task B full-diff review by `reviewer-flash` recorded
+`Correct-to-merge` with two Minor findings: add explicit Gaugefields.jl
+attribution to the new crate license and avoid recomputing every before/after
+product quadratically. The license now carries both notices, and the force uses
+term-owned prefix/suffix scratch allocated outside the site loop. The complete
+Rust gate and numerical comparisons remained green. The delta re-review found
+no remaining finding and recorded `Correct-to-merge`; the Task B
 post-implementation gate is closed.
