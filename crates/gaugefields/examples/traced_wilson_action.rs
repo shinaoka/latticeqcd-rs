@@ -1,6 +1,6 @@
-use gaugefields::{cold_su3, register_runtime, wilson_action, wilson_action_traced, LatticeShape4};
-use tenferro_cpu::CpuBackend;
-use tenferro_runtime::{DType, GraphCompiler, GraphExecutor, Tensor, TracedTensor};
+use gaugefields::{cold_su3, runtime_modules, wilson_action, wilson_action_traced, LatticeShape4};
+use tenferro_cpu::{runtime_engine_id, runtime_engine_registration, CpuBackend};
+use tenferro_runtime::{DType, GraphCompiler, Runtime, Tensor, TracedTensor};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let links = cold_su3(LatticeShape4::new([2, 2, 2, 2])?)?;
@@ -14,13 +14,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Vec<_>>();
     let program = GraphCompiler::new().compile_with_input_specs(&action, &specs)?;
     let values: [Tensor; 4] =
-        std::array::from_fn(|mu| Tensor::C64(links.links()[mu].typed().clone()));
-    let bindings = traced.iter().zip(&values).collect::<Vec<_>>();
-    let mut executor = GraphExecutor::new(CpuBackend::new());
-    executor.register_extension(register_runtime)?;
-    let traced_value = executor
-        .run_with_inputs(&program, &bindings)?
-        .as_slice::<f64>()?[0];
+        std::array::from_fn(|mu| Tensor::C64(links.links()[mu].typed().duplicate().unwrap()));
+    let inputs = values.iter().collect::<Vec<_>>();
+    let backend = CpuBackend::new();
+    let mut builder = Runtime::builder();
+    builder.register_engine(runtime_engine_registration(&backend)?)?;
+    for module in runtime_modules::<CpuBackend>(runtime_engine_id()?)? {
+        builder.install_extension_module(module)?;
+    }
+    let runtime = builder.build()?;
+    let traced_value = runtime.run_compiled(&program, &inputs)?[0].as_slice::<f64>()?[0];
     let direct = wilson_action(&links, 6.0)?;
     let residual = (traced_value - direct).abs();
     println!("direct={direct} traced={traced_value} residual={residual}");

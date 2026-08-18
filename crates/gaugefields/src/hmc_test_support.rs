@@ -24,7 +24,8 @@ pub(crate) fn random_momentum(
 pub(crate) fn clone_links(links: &GaugeLinks) -> Result<GaugeLinks, GaugeError> {
     let lattice = links.lattice();
     let copies = std::array::from_fn(|mu| {
-        GaugeLinkTensor::from_typed(links.links()[mu].typed().clone(), lattice).unwrap()
+        GaugeLinkTensor::from_typed(links.links()[mu].typed().duplicate().unwrap(), lattice)
+            .unwrap()
     });
     GaugeLinks::new(copies)
 }

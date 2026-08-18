@@ -17,12 +17,11 @@ formula, and Phase 8 builds evolution kernels on the stabilized tensor/runtime
 surface. Each PR must pass independently; a single Phase 6–8 mega-PR is outside
 this design.
 
-At design time, tenferro `origin/main` is
-[`51bc0a7bef274e20d08fc054856cb4d74c284cbe`](https://github.com/tensor4all/tenferro-rs/commit/51bc0a7bef274e20d08fc054856cb4d74c284cbe).
-Implementation must fetch `origin/main`, record the then-current exact revision,
-and update all tenferro-family pins atomically. A floating Git branch is not a
-reproducible dependency. The role-split extension AD API required here landed
-through [tenferro issue #1301](https://github.com/tensor4all/tenferro-rs/issues/1301).
+The current tenferro `origin/main` snapshot is
+[`c942129974b544225ed963414d7be1300980f901`](https://github.com/tensor4all/tenferro-rs/commit/c942129974b544225ed963414d7be1300980f901).
+All direct tenferro pins and the lockfile resolve to this exact revision. A
+floating Git branch is not a reproducible dependency; semantic extension AD is
+registered through the current tenferro semantic rule API.
 
 The Julia semantic reference is Gaugefields.jl commit
 [`9e5719970770f4497405a856315c90bef7f74449`](https://github.com/shinaoka/Gaugefields.jl/tree/9e5719970770f4497405a856315c90bef7f74449).
@@ -36,9 +35,9 @@ In particular, Phase 8 follows:
 
 In scope:
 
-1. traced Wilson action execution through an explicitly registered tenferro
-   host-reference extension;
-2. first-order JVP and reverse gradient via graph-level role-split AD rules;
+1. traced Wilson action execution through explicitly installed tenferro
+   extension modules;
+2. first-order JVP and reverse gradient via semantic extension AD rules;
 3. exact Julia-compatible `exp_ta`, SU(3) normalization, and field updates;
 4. a crate-private HMC driver used only to validate the public kernels;
 5. migration of Phase 0–5 storage and hot paths to the correct typed boundary.
@@ -81,7 +80,7 @@ The word “tensor” identifies three distinct roles:
 |---|---|---|
 | owned numerical storage | `TypedTensor<Complex64>` / `TypedTensor<f64>` | dtype known after construction; avoids repeated erased dispatch |
 | borrowed numerical kernel input | typed view or validated slice | validates once and avoids per-site extraction/materialization |
-| tenferro extension ABI | `Tensor` | official `HostReference` ABI is dtype-erased and permits mixed C64/F64 inputs/outputs |
+| tenferro extension ABI | `Tensor` | dtype-erased boundary permits mixed C64/F64 inputs/outputs |
 | traced graph value | `TracedTensor` | represents graph values and symbolic metadata, not materialized storage |
 
 Use dynamic-rank `TypedTensor<T>` internally. The gauge wrappers enforce the
@@ -112,9 +111,9 @@ not merely at the outermost API.
 | typed storage and views | tenferro `TypedTensor` / typed views |
 | extension ABI | tenferro `Tensor` |
 | graph construction | `TracedTensor` and graph compiler APIs |
-| execution and caching | `GraphExecutor<CpuBackend>` |
-| extension dispatch | `HostReferenceRuntime` with explicit registration |
-| differentiation | `AdContext` and role-split graph rules |
+| execution and caching | application-owned `Runtime` with `run_compiled` |
+| extension dispatch | installed `ExtensionModule` values |
+| differentiation | `AdContext` and semantic extension rules |
 | batched `exp(tP) U` | tenferro `dot_general` |
 | expressible tensor reductions | tenferro standard operations |
 | periodic Wilson stencil | custom gauge kernel; no native periodic stencil/gather operation |
@@ -127,8 +126,8 @@ not duplicate a tenferro backend operation or introduce hidden materialization.
 ## 6. Runtime ownership and initialization
 
 There is no public `CpuEngine` type in the target tenferro API. For traced work,
-the application owns a `GraphExecutor<CpuBackend>` and an `AdContext`. For
-Phase 8 eager evolution, it owns a `CpuEvolutionContext`, which privately owns
+the application owns a `Runtime` and an `AdContext`. For Phase 8 eager
+evolution, it owns a `CpuEvolutionContext`, which privately owns
 a `CpuBackend` and its associated tenferro runtime cache.
 
 They are constructed once per execution owner and reused:
@@ -139,8 +138,8 @@ They are constructed once per execution owner and reused:
 - tests: once per test fixture when several graph executions belong together.
 
 They are not constructed per operation and are not process-global singletons.
-The executor owns graph runtime caches, extension registration, and workspace.
-The AD context separately owns AD rules and transform caches. The evolution
+The runtime owns graph caches, installed extension modules, and workspace. The
+AD context separately owns semantic AD rules and transform caches. The evolution
 context owns the backend buffer pool and persistent contraction-analysis cache.
 CPU parallelism stays under each backend's `CpuContext`.
 
@@ -149,17 +148,23 @@ revision):
 
 ```text
 let backend = CpuBackend::new();
-let mut executor = GraphExecutor::new(backend);
-executor.register_extension(gaugefields::register_runtime)?;
+let mut runtime = Runtime::builder();
+runtime.register_engine(tenferro_cpu::runtime_engine_registration(&backend)?)?;
+for module in gaugefields::runtime_modules::<CpuBackend>(
+    tenferro_cpu::runtime_engine_id()?,
+)? {
+    runtime.install_extension_module(module)?;
+}
+let runtime = runtime.build()?;
 
 let ad = AdContext::builder()
-    .with_extension_rules(gaugefields::ad_rules()?)
+    .with_semantic_extension_rules(gaugefields::ad_rules()?)?
     .build()?;
 
 let mut evolution = CpuEvolutionContext::new(CpuBackend::new());
 ```
 
-The library exposes registration functions but performs no hidden
+The library exposes the module constructor but performs no hidden
 initialization. The README contains the checked evolution setup using the exact
 pinned API.
 
@@ -172,7 +177,9 @@ Both use this pipeline:
    borrowed inputs;
 2. a shared host kernel evaluates action, directional derivative, or force;
 3. the direct wrapper returns domain types;
-4. `HostReference` wraps typed results into erased `Tensor` variants.
+4. an installed extension module prepares the operation, materializes compact
+   inputs in the runtime-owned backend session, and returns erased `Tensor`
+   variants.
 
 Prepared metadata contains lattice shape, checked site count, and four validated
 column-major site strides. Periodic neighbors use O(1) wrap arithmetic, so
@@ -185,15 +192,16 @@ collections. Behavioral parity plus the large-lattice constant-size unit
 regression enforce this boundary; production source text is not a test API.
 
 Extension execution is intentionally host-reference in Phase 6. Receiving a
-backend/GPU tensor returns a typed placement error. Missing extension runtime
-registration remains tenferro's explicit missing-capability error and never
-falls back to the direct kernel through an alternative dispatch path.
+backend/GPU tensor at a direct host boundary returns a typed placement error.
+Missing module installation remains tenferro's explicit typed capability error
+and never falls back to the direct kernel through an alternative dispatch path.
 
 ## 8. Phase 6 — extension integration
 
 ### 8.1 Public surface
 
-Keep only the user-facing traced operation and registration public:
+Keep the user-facing traced operation and module constructor public; runtime
+engine and module installation remain application-owned:
 
 ```text
 pub fn wilson_action_traced(
@@ -201,15 +209,14 @@ pub fn wilson_action_traced(
     beta: f64,
 ) -> Result<TracedTensor>;
 
-pub fn register_runtime<B: TensorBackend + 'static>(
-    executor: &mut ExtensionExecutor<B>,
-) -> Result<(), ExtensionRuntimeRegistryError>;
+pub fn runtime_modules<B: TensorBackend + 'static>(
+    engine_id: EngineId,
+) -> Result<Vec<Arc<dyn ExtensionModule>>, RuntimeConfigError>;
 ```
 
-The JVP and force op constructors, validation records, runtime callbacks, and
-payload structs are `pub(crate)`. If tenferro requires a public registration
-contract, expose the narrowest function required rather than the concrete
-runtime types.
+The JVP and force op constructors, validation records, prepared-operation
+callbacks, and payload structs are `pub(crate)`. Expose only the module
+constructor rather than concrete engine, plan, or executor types.
 
 ### 8.2 Operation families
 
@@ -235,21 +242,19 @@ Shape inference validates:
 - the force seed is scalar F64;
 - action/JVP output is scalar F64 and force outputs match the four links.
 
-Independent unresolved `TensorAxis` dimensions are accepted during inference:
-tenferro cannot yet express equality constraints between separate placeholders
-([tenferro-rs #1370](https://github.com/tensor4all/tenferro-rs/issues/1370)).
-The executor validates placeholder bindings, and every host reference repeats
-exact link/tangent dtype, rank, color-axis, and lattice-shape equality checks
-before numerical execution. Phase 6 will adopt graph-level equality guards when
-the upstream constraint mechanism becomes available.
+`ExtensionShapeContext` records same-shape and axis-equality constraints for
+symbolic inputs. Concrete runtime bindings and the prepared operation repeat
+exact link/tangent dtype, rank, color-axis, and lattice-shape checks before
+numerical execution.
 
-One `register_runtime` call registers a `HostReferenceRuntime` for all three
-families. It is deliberately shaped as the closure accepted by
-`GraphExecutor::register_extension`, so applications call
-`executor.register_extension(gaugefields::register_runtime)?`. The underlying
-argument is the executor-owned `ExtensionExecutor<B>`. `lower_to_standard_ops`
-returns no lowering in this phase. Public eager extension wrappers are not
-introduced because the existing direct API is the explicit eager/host surface.
+`runtime_modules::<B>` returns one explicitly installable module for each of the
+three families. Each module registers one engine and matching planning config;
+its prepared operation owns the cloned payload, specialization, and runtime
+binding, then executes through the existing backend session. There is no eager
+or CPU fallback and no hidden module installation. `lower_to_standard_ops`
+remains unused because these families execute through their installed modules.
+Public eager extension wrappers are not introduced because the existing direct
+API is the explicit eager/host surface.
 
 ### 8.3 Phase 6 verification gate
 
@@ -257,33 +262,32 @@ introduced because the existing direct API is the explicit eager/host surface.
 - all family metadata and shape inference paths have positive and negative tests;
 - wrong dtype/rank/color extent/lattice agreement/seed/active direction returns
   a typed error without panic;
-- executing without `register_runtime` produces the expected missing-runtime error;
-- registration is deterministic and duplicate handling follows tenferro's contract;
+- executing without the required installed module produces a typed family error;
+- module installation is deterministic and duplicate handling follows tenferro's contract;
 - traced execution does not call `GaugeIdentityOp`, which is removed;
 - existing Phase 0–5 tests remain green after typed-storage migration.
 
-## 9. Phase 7 — role-split autodiff
+## 9. Phase 7 — semantic extension autodiff
 
 ### 9.1 Rule graph
 
-The canonical reverse path is deliberately compositional:
+The canonical semantic path is deliberately compositional:
 
 ```text
-Wilson action --linearize--> Wilson action JVP
-Wilson action JVP --transpose linear op--> Wilson force
+Wilson action --action-family linearize--> Wilson action JVP
+Wilson action --action-family linear transpose--> Wilson force
 Wilson force --higher-order request--> typed unsupported error
 ```
 
-The primal action rule emits the variable-arity JVP op with only active input
-directions. The transpose rule for that linear JVP consumes a scalar cotangent
-and emits cotangents only for active link inputs; tenferro supplies zeros or
-absence according to its role contract for inactive/non-differentiable inputs.
-The force kernel scales linearly with an arbitrary scalar cotangent, not merely
-one.
+The action-family linearize rule emits the variable-arity JVP op with only
+active input directions. The action-family linear-transpose rule reads the four
+primal links and a scalar cotangent, emits the force op, and returns cotangents
+only for active link inputs. The force kernel scales linearly with an arbitrary
+scalar cotangent, not merely one.
 
-Do not add an optional direct primal-VJP escape hatch in Phase 7. It would create
-a second reverse path and weaken coverage of the intended
-linearize-then-transpose architecture. Do not register a force AD rule;
+Do not add an optional direct primal-VJP escape hatch in Phase 7. It would
+create a second reverse path and weaken coverage of the intended semantic
+linearize/transpose architecture. Do not register a JVP or force AD rule;
 higher-order differentiation is an explicit unsupported capability.
 
 ### 9.2 Public surface and ownership
@@ -305,7 +309,8 @@ demonstrated:
 - reverse output scales correctly for non-unit and negative cotangent seeds;
 - Julia-derived action/force fixtures retain links to their upstream source and
   revision;
-- missing runtime and missing AD-rule registration produce distinct typed errors;
+- missing extension modules and missing semantic AD-rule registration produce
+  distinct typed errors;
 - requesting differentiation through the force produces the intentional
   higher-order unsupported error.
 
@@ -469,7 +474,7 @@ implementation) for:
 Diagnostics include the operation/family, expected contract, actual dtype or
 shape, and relevant direction. Preserve the tenferro error as a source where
 possible. Do not flatten public errors to `String` and do not reinterpret a
-missing runtime as a numerical failure.
+missing extension capability as a numerical failure.
 
 ## 12. Documentation and implementation records
 

@@ -2,14 +2,11 @@ use num_complex::Complex64;
 use tenferro_tensor::Tensor;
 
 #[test]
-fn dependency_manifest_uses_phase_6_snapshot() {
+fn dependency_manifest_uses_current_tenferro_snapshot() {
     let manifest =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml")).unwrap();
-    let phase_6 = "51bc0a7bef274e20d08fc054856cb4d74c284cbe";
-    assert_eq!(manifest.matches(phase_6).count(), 5);
-    assert!(!manifest.contains("f504ba0a8668baca89ab1d4348b9475ff85377b4"));
-    assert!(manifest.contains("691def2d82fd4367b397d61209449f68e82050b7"));
-    assert!(manifest.contains("57a2e7ebe7738ca2f8b5c96f4c6ce4e467b20495"));
+    let current = "c942129974b544225ed963414d7be1300980f901";
+    assert_eq!(manifest.matches(current).count(), 5);
 }
 
 #[test]

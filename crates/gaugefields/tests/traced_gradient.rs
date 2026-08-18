@@ -1,19 +1,30 @@
 #![cfg(feature = "autodiff")]
 
-use gaugefields::{
-    action_gradient, ad_rules, load_fixture, register_runtime, wilson_action_traced,
-};
+use gaugefields::{action_gradient, ad_rules, load_fixture, runtime_modules, wilson_action_traced};
 use std::path::Path;
 use tenferro_ad::AdContext;
-use tenferro_cpu::CpuBackend;
-use tenferro_ops::std_tensor_op::StdTensorOp;
-use tenferro_runtime::{GraphCompiler, GraphExecutor, TracedTensor};
+use tenferro_cpu::{runtime_engine_id, runtime_engine_registration, CpuBackend};
+use tenferro_runtime::program::SemanticOpRef;
+use tenferro_runtime::{GraphCompiler, Runtime, TracedTensor};
 
 fn execute(tensor: &TracedTensor) -> tenferro_tensor::Tensor {
     let program = GraphCompiler::new().compile(tensor).unwrap();
-    let mut executor = GraphExecutor::new(CpuBackend::new());
-    executor.register_extension(register_runtime).unwrap();
-    executor.run(&program).unwrap()
+    let backend = CpuBackend::new();
+    let mut builder = Runtime::builder();
+    builder
+        .register_engine(runtime_engine_registration(&backend).unwrap())
+        .unwrap();
+    for module in runtime_modules::<CpuBackend>(runtime_engine_id().unwrap()).unwrap() {
+        builder.install_extension_module(module).unwrap();
+    }
+    builder
+        .build()
+        .unwrap()
+        .run_compiled(&program, &[])
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap()
 }
 
 #[test]
@@ -36,7 +47,8 @@ fn reverse_mode_matches_every_direct_gradient_and_arbitrary_seed() {
     });
     let action = wilson_action_traced([&links[0], &links[1], &links[2], &links[3]], beta).unwrap();
     let ad = AdContext::builder()
-        .with_extension_rules(ad_rules().unwrap())
+        .with_semantic_extension_rules(ad_rules().unwrap())
+        .unwrap()
         .build()
         .unwrap();
 
@@ -44,14 +56,14 @@ fn reverse_mode_matches_every_direct_gradient_and_arbitrary_seed() {
         let cotangent = TracedTensor::from_vec_col_major(vec![], vec![seed]).unwrap();
         for mu in 0..4 {
             let traced = ad.vjp(&action, &links[mu], &cotangent).unwrap();
-            let force_nodes = traced
-                .graph()
+            let program = GraphCompiler::new().compile(&traced).unwrap();
+            let force_nodes = program
+                .program()
                 .operations()
-                .iter()
-                .filter(|node| {
+                .filter(|operation| {
                     matches!(
-                        &node.operation,
-                        StdTensorOp::Extension(op)
+                        operation.op(),
+                        SemanticOpRef::Extension(op)
                             if op.family_id() == "gaugefields.wilson_force.v1"
                     )
                 })

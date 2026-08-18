@@ -13,10 +13,8 @@ thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 npyz = { version = "0.8", features = ["complex"] }
-tenferro-tensor = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "51bc0a7bef274e20d08fc054856cb4d74c284cbe", default-features = false }
-tenferro-runtime = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "51bc0a7bef274e20d08fc054856cb4d74c284cbe", default-features = false, features = ["cpu-faer"] }
-tenferro-cpu = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "51bc0a7bef274e20d08fc054856cb4d74c284cbe", default-features = false, features = ["cpu-faer"] }
-tenferro-ad = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "51bc0a7bef274e20d08fc054856cb4d74c284cbe", default-features = false, features = ["cpu-faer"] }
-tenferro-internal-ops = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "51bc0a7bef274e20d08fc054856cb4d74c284cbe", default-features = false, features = ["autodiff"] }
-computegraph = { git = "https://github.com/tensor4all/computegraph-rs.git", rev = "691def2d82fd4367b397d61209449f68e82050b7" }
-tidu = { git = "https://github.com/tensor4all/tidu-rs.git", rev = "57a2e7ebe7738ca2f8b5c96f4c6ce4e467b20495" }
+tenferro-tensor = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "c942129974b544225ed963414d7be1300980f901", default-features = false }
+tenferro-runtime = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "c942129974b544225ed963414d7be1300980f901", default-features = false, features = ["cpu-faer"] }
+tenferro-cpu = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "c942129974b544225ed963414d7be1300980f901", default-features = false, features = ["cpu-faer"] }
+tenferro-ad = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "c942129974b544225ed963414d7be1300980f901", default-features = false, features = ["cpu-faer"] }
+tenferro-internal-ops = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "c942129974b544225ed963414d7be1300980f901", default-features = false, features = ["autodiff"] }

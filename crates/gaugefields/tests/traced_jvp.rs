@@ -1,16 +1,15 @@
 #![cfg(feature = "autodiff")]
 
-use computegraph::OperationRole;
 use gaugefields::{
-    action_gradient, ad_rules, load_fixture, register_runtime, wilson_action, wilson_action_traced,
+    action_gradient, ad_rules, load_fixture, runtime_modules, wilson_action, wilson_action_traced,
     GaugeLinkTensor, GaugeLinks,
 };
 use num_complex::Complex64;
 use std::path::Path;
 use tenferro_ad::AdContext;
-use tenferro_cpu::CpuBackend;
-use tenferro_ops::std_tensor_op::StdTensorOp;
-use tenferro_runtime::{GraphCompiler, GraphExecutor, TracedTensor};
+use tenferro_cpu::{runtime_engine_id, runtime_engine_registration, CpuBackend};
+use tenferro_runtime::program::SemanticOpRef;
+use tenferro_runtime::{GraphCompiler, Runtime, TracedTensor};
 use tenferro_tensor::TypedTensor;
 
 fn link(value: f64) -> TracedTensor {
@@ -40,24 +39,24 @@ fn active_direction_payload_omits_inactive_tangents() {
         });
         let action = wilson_action_traced(action_inputs, 5.7).unwrap();
         let ad = AdContext::builder()
-            .with_extension_rules(ad_rules().unwrap())
+            .with_semantic_extension_rules(ad_rules().unwrap())
+            .unwrap()
             .build()
             .unwrap();
         let jvp = ad.jvp(&action, &source, &tangent).unwrap();
 
-        let matching = jvp
-            .graph()
+        let program = GraphCompiler::new().compile(&jvp).unwrap();
+        let matching = program
+            .program()
             .operations()
-            .iter()
-            .filter_map(|node| match &node.operation {
-                StdTensorOp::Extension(op)
+            .filter_map(|operation| match operation.op() {
+                SemanticOpRef::Extension(op)
                     if op.family_id() == "gaugefields.wilson_action_jvp.v1" =>
                 {
                     Some((
                         format!("{op:?}"),
                         op.input_count(),
-                        node.inputs.len(),
-                        &node.role,
+                        operation.inputs().len(),
                     ))
                 }
                 _ => None,
@@ -73,14 +72,6 @@ fn active_direction_payload_omits_inactive_tangents() {
                 .contains(&format!("active_dirs: {active_dirs:?}")),
             "payload={} expected active_dirs={active_dirs:?}",
             matching[0].0
-        );
-        assert_eq!(
-            matching[0].3,
-            &OperationRole::Linearized {
-                active_mask: std::iter::repeat_n(false, 4)
-                    .chain(std::iter::repeat_n(true, active_dirs.len()))
-                    .collect()
-            }
         );
     }
 }
@@ -152,14 +143,27 @@ fn jvp_matches_finite_difference_sweep_and_gradient_inner_product() {
         )
         .unwrap();
         let ad = AdContext::builder()
-            .with_extension_rules(ad_rules().unwrap())
+            .with_semantic_extension_rules(ad_rules().unwrap())
+            .unwrap()
             .build()
             .unwrap();
         let traced = ad.jvp(&action, &traced_links[mu], &traced_tangent).unwrap();
-        let mut executor = GraphExecutor::new(CpuBackend::new());
-        executor.register_extension(register_runtime).unwrap();
         let program = GraphCompiler::new().compile(&traced).unwrap();
-        let actual = executor.run(&program).unwrap().as_slice::<f64>().unwrap()[0];
+        let backend = CpuBackend::new();
+        let mut builder = Runtime::builder();
+        builder
+            .register_engine(runtime_engine_registration(&backend).unwrap())
+            .unwrap();
+        for module in runtime_modules::<CpuBackend>(runtime_engine_id().unwrap()).unwrap() {
+            builder.install_extension_module(module).unwrap();
+        }
+        let actual = builder
+            .build()
+            .unwrap()
+            .run_compiled(&program, &[])
+            .unwrap()[0]
+            .as_slice::<f64>()
+            .unwrap()[0];
         let direct = gradient[mu]
             .typed()
             .host_data()

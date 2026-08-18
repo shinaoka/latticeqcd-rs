@@ -3,17 +3,21 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::path::Path;
 #[cfg(feature = "autodiff")]
-use tenferro_cpu::CpuBackend;
-use tenferro_runtime::extension::ExtensionOp;
+use tenferro_cpu::{runtime_engine_id, runtime_engine_registration, CpuBackend};
+use tenferro_ops::ext_op::{invoke_extension_shape_inference, ExtensionOp};
 use tenferro_runtime::{DType, SymDim};
 #[cfg(feature = "autodiff")]
-use tenferro_runtime::{GraphCompiler, GraphExecutor, TracedTensor};
+use tenferro_runtime::{GraphCompiler, Runtime, TracedTensor};
 use tenferro_tensor::{
-    Buffer, BufferHandle, DeviceId, DeviceKind, Error as TensorError, GpuBackendKind, MemoryKind,
-    Placement, Tensor, TypedTensor,
+    BackendStorageHandle, DeviceId, DeviceKind, Error as TensorError, GpuBackendKind, MemoryKind,
+    Placement, StorageBuffer, Tensor, TypedTensor,
 };
 
-type InferredMeta = tenferro_tensor::Result<Vec<(DType, Vec<SymDim>)>>;
+type InferredMeta = tenferro_tensor::Result<tenferro_ops::ext_op::ExtensionShapeInference>;
+
+fn infer(op: &dyn ExtensionOp, dtypes: &[DType], shapes: &[&[SymDim]]) -> InferredMeta {
+    invoke_extension_shape_inference(op, dtypes, shapes)
+}
 
 fn link_shape() -> Vec<SymDim> {
     [3, 3, 2, 2, 2, 2].into_iter().map(SymDim::from).collect()
@@ -61,7 +65,9 @@ fn families_infer_exact_symbolic_contracts() {
     assert_eq!(action.input_count(), 4);
     assert_eq!(action.output_count(), 1);
     assert_eq!(
-        action.infer_output_meta(&[DType::C64; 4], &shapes).unwrap(),
+        infer(&action, &[DType::C64; 4], &shapes)
+            .unwrap()
+            .output_metas,
         vec![(DType::F64, vec![])]
     );
 
@@ -76,8 +82,9 @@ fn families_infer_exact_symbolic_contracts() {
     ];
     assert_eq!(jvp.input_count(), 6);
     assert_eq!(
-        jvp.infer_output_meta(&[DType::C64; 6], &jvp_shapes)
-            .unwrap(),
+        infer(&jvp, &[DType::C64; 6], &jvp_shapes)
+            .unwrap()
+            .output_metas,
         vec![(DType::F64, vec![])]
     );
 
@@ -87,12 +94,13 @@ fn families_infer_exact_symbolic_contracts() {
     assert_eq!(force.input_count(), 5);
     assert_eq!(force.output_count(), 4);
     assert_eq!(
-        force
-            .infer_output_meta(
-                &[DType::C64, DType::C64, DType::C64, DType::C64, DType::F64],
-                &force_shapes,
-            )
-            .unwrap(),
+        infer(
+            &force,
+            &[DType::C64, DType::C64, DType::C64, DType::C64, DType::F64],
+            &force_shapes,
+        )
+        .unwrap()
+        .output_metas,
         vec![(DType::C64, shape.clone()); 4]
     );
 }
@@ -101,59 +109,87 @@ fn families_infer_exact_symbolic_contracts() {
 fn metadata_rejects_wrong_dtype_rank_color_lattice_tangent_and_seed() {
     let shape = link_shape();
     let shapes = [&shape[..], &shape[..], &shape[..], &shape[..]];
-    assert!(WilsonActionOp::new(6.0)
-        .unwrap()
-        .infer_output_meta(&[DType::F64, DType::C64, DType::C64, DType::C64], &shapes)
-        .is_err());
+    let action = WilsonActionOp::new(6.0).unwrap();
+    assert!(infer(
+        &action,
+        &[DType::F64, DType::C64, DType::C64, DType::C64],
+        &shapes,
+    )
+    .is_err());
     let rank_five = vec![SymDim::from(3); 5];
-    assert!(WilsonActionOp::new(6.0)
-        .unwrap()
-        .infer_output_meta(&[DType::C64; 4], &[&rank_five, &shape, &shape, &shape],)
-        .is_err());
+    assert!(infer(
+        &action,
+        &[DType::C64; 4],
+        &[&rank_five, &shape, &shape, &shape],
+    )
+    .is_err());
     let mut wrong_color = shape.clone();
     wrong_color[1] = SymDim::from(2);
-    assert!(WilsonActionOp::new(6.0)
-        .unwrap()
-        .infer_output_meta(&[DType::C64; 4], &[&wrong_color, &shape, &shape, &shape],)
-        .is_err());
+    assert!(infer(
+        &action,
+        &[DType::C64; 4],
+        &[&wrong_color, &shape, &shape, &shape],
+    )
+    .is_err());
     let mut wrong_lattice = shape.clone();
     wrong_lattice[5] = SymDim::from(3);
-    assert!(WilsonActionOp::new(6.0)
-        .unwrap()
-        .infer_output_meta(&[DType::C64; 4], &[&shape, &shape, &shape, &wrong_lattice],)
-        .is_err());
+    assert!(infer(
+        &action,
+        &[DType::C64; 4],
+        &[&shape, &shape, &shape, &wrong_lattice],
+    )
+    .is_err());
 
     let jvp = WilsonActionJvpOp::new(6.0, vec![2]).unwrap();
-    let jvp_shapes = [&shape[..], &shape, &shape, &shape, &shape];
+    let jvp_shapes = [&shape[..], &shape, &shape, &shape, &shape, &shape];
     assert_invalid_without_panic(std::panic::catch_unwind(|| {
-        jvp.infer_output_meta(
+        infer(
+            &jvp,
             &[DType::C64, DType::C64, DType::C64, DType::C64, DType::F64],
-            &jvp_shapes,
+            &jvp_shapes[..5],
         )
     }));
     assert_invalid_without_panic(std::panic::catch_unwind(|| {
-        jvp.infer_output_meta(
-            &[DType::C64; 5],
-            &[&shape, &shape, &shape, &shape, &rank_five],
+        infer(
+            &jvp,
+            &[
+                DType::C64,
+                DType::C64,
+                DType::C64,
+                DType::C64,
+                DType::F64,
+                DType::C64,
+            ],
+            &jvp_shapes,
         )
     }));
     let mut wrong_tangent_shape = shape.clone();
     wrong_tangent_shape[5] = SymDim::from(7);
+    let wrong_tangent_shapes = [
+        &shape[..],
+        &shape[..],
+        &shape[..],
+        &shape[..],
+        &shape[..],
+        &wrong_tangent_shape[..],
+    ];
     assert_invalid_without_panic(std::panic::catch_unwind(|| {
-        jvp.infer_output_meta(
-            &[DType::C64; 5],
-            &[&shape, &shape, &shape, &shape, &wrong_tangent_shape],
-        )
+        infer(&jvp, &[DType::C64; 6], &wrong_tangent_shapes)
     }));
 
     let scalar: [SymDim; 0] = [];
     let force = WilsonForceOp::new(6.0).unwrap();
     assert_invalid_without_panic(std::panic::catch_unwind(|| {
-        force.infer_output_meta(&[DType::C64; 5], &[&shape, &shape, &shape, &shape, &scalar])
+        infer(
+            &force,
+            &[DType::C64; 5],
+            &[&shape, &shape, &shape, &shape, &scalar],
+        )
     }));
     let rank_one_seed = [SymDim::from(1)];
     assert_invalid_without_panic(std::panic::catch_unwind(|| {
-        force.infer_output_meta(
+        infer(
+            &force,
             &[DType::C64, DType::C64, DType::C64, DType::C64, DType::F64],
             &[&shape, &shape, &shape, &shape, &rank_one_seed],
         )
@@ -161,10 +197,10 @@ fn metadata_rejects_wrong_dtype_rank_color_lattice_tangent_and_seed() {
 }
 
 #[test]
-fn jvp_and_force_host_references_execute_registered_contracts() {
+fn jvp_and_force_payloads_execute_the_registered_contracts() {
     let links = crate::cold_su3(crate::LatticeShape4::new([1, 1, 1, 1]).unwrap()).unwrap();
     let erased: [Tensor; 4] =
-        std::array::from_fn(|mu| Tensor::C64(links.links()[mu].typed().clone()));
+        std::array::from_fn(|mu| Tensor::C64(links.links()[mu].typed().duplicate().unwrap()));
     let zero_tangent: Tensor =
         TypedTensor::from_vec_col_major(vec![3, 3, 1, 1, 1, 1], vec![Complex64::default(); 9])
             .unwrap()
@@ -176,20 +212,16 @@ fn jvp_and_force_host_references_execute_registered_contracts() {
         &erased[3],
         &zero_tangent,
     ];
-    let jvp = WilsonActionJvpOp::new(6.0, vec![2])
-        .unwrap()
-        .execute(&jvp_inputs)
-        .unwrap();
+    let jvp_op = WilsonActionJvpOp::new(6.0, vec![2]).unwrap();
+    let jvp = execute_payload(WILSON_ACTION_JVP_FAMILY, &jvp_op, &jvp_inputs).unwrap();
     assert_eq!(jvp[0].as_slice::<f64>().unwrap(), &[0.0]);
 
     let seed: Tensor = TypedTensor::from_vec_col_major(vec![], vec![0.0_f64])
         .unwrap()
         .into();
     let force_inputs = [&erased[0], &erased[1], &erased[2], &erased[3], &seed];
-    let force = WilsonForceOp::new(6.0)
-        .unwrap()
-        .execute(&force_inputs)
-        .unwrap();
+    let force_op = WilsonForceOp::new(6.0).unwrap();
+    let force = execute_payload(WILSON_FORCE_FAMILY, &force_op, &force_inputs).unwrap();
     assert_eq!(force.len(), 4);
     for output in force {
         assert_eq!(output.shape(), &[3, 3, 1, 1, 1, 1]);
@@ -202,7 +234,7 @@ fn jvp_and_force_host_references_execute_registered_contracts() {
 }
 
 #[test]
-fn host_reference_rejects_exact_link_shape_mismatch_without_panicking() {
+fn payload_rejects_exact_link_shape_mismatch_without_panicking() {
     let common: Tensor =
         TypedTensor::from_vec_col_major(vec![3, 3, 1, 1, 1, 1], vec![Complex64::default(); 9])
             .unwrap()
@@ -212,11 +244,14 @@ fn host_reference_rejects_exact_link_shape_mismatch_without_panicking() {
             .unwrap()
             .into();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        WilsonActionOp::new(6.0)
-            .unwrap()
-            .execute(&[&common, &common, &common, &mismatched])
+        let op = WilsonActionOp::new(6.0).unwrap();
+        execute_payload(
+            WILSON_ACTION_FAMILY,
+            &op,
+            &[&common, &common, &common, &mismatched],
+        )
     }));
-    assert!(result.is_ok(), "host-reference validation panicked");
+    assert!(result.is_ok(), "payload validation panicked");
     let error = result.unwrap().unwrap_err().to_string();
     assert!(error.contains("different lattice shape"), "{error}");
 }
@@ -228,8 +263,11 @@ fn random_fixture_links() -> crate::GaugeLinks {
     .unwrap();
     let lattice = fixture.links().lattice();
     crate::GaugeLinks::new(std::array::from_fn(|mu| {
-        crate::GaugeLinkTensor::from_typed(fixture.links().links()[mu].typed().clone(), lattice)
-            .unwrap()
+        crate::GaugeLinkTensor::from_typed(
+            fixture.links().links()[mu].typed().duplicate().unwrap(),
+            lattice,
+        )
+        .unwrap()
     }))
     .unwrap()
 }
@@ -278,7 +316,7 @@ fn random_fixture_jvp_matches_finite_difference_and_direct_gradient() {
         .map(|&mu| tangent(mu, 9 * base.lattice().nv()))
         .collect::<Vec<_>>();
     let erased: [Tensor; 4] =
-        std::array::from_fn(|mu| Tensor::C64(base.links()[mu].typed().clone()));
+        std::array::from_fn(|mu| Tensor::C64(base.links()[mu].typed().duplicate().unwrap()));
     let tangent_tensors = tangents
         .iter()
         .map(|values| {
@@ -295,10 +333,8 @@ fn random_fixture_jvp_matches_finite_difference_and_direct_gradient() {
         &tangent_tensors[0],
         &tangent_tensors[1],
     ];
-    let actual = WilsonActionJvpOp::new(beta, active_dirs.to_vec())
-        .unwrap()
-        .execute(&inputs)
-        .unwrap()[0]
+    let jvp = WilsonActionJvpOp::new(beta, active_dirs.to_vec()).unwrap();
+    let actual = execute_payload(WILSON_ACTION_JVP_FAMILY, &jvp, &inputs).unwrap()[0]
         .as_slice::<f64>()
         .unwrap()[0];
     let gradient = crate::action_gradient(&base, beta).unwrap();
@@ -376,11 +412,18 @@ fn traced_all_direction_jvp_graph_matches_sum_and_finite_difference_sweep() {
     .next()
     .unwrap();
     let program = GraphCompiler::new().compile(&traced).unwrap();
-    let mut executor = GraphExecutor::new(CpuBackend::new());
-    executor
-        .register_extension(crate::register_runtime)
+    let backend = CpuBackend::new();
+    let mut builder = Runtime::builder();
+    builder
+        .register_engine(runtime_engine_registration(&backend).unwrap())
         .unwrap();
-    let actual = executor.run(&program).unwrap().as_slice::<f64>().unwrap()[0];
+    for module in crate::runtime_modules::<CpuBackend>(runtime_engine_id().unwrap()).unwrap() {
+        builder.install_extension_module(module).unwrap();
+    }
+    let runtime = builder.build().unwrap();
+    let actual = runtime.run_compiled(&program, &[]).unwrap()[0]
+        .as_slice::<f64>()
+        .unwrap()[0];
     let gradient = crate::action_gradient(&base, beta).unwrap();
     let direct = active_dirs
         .iter()
@@ -421,20 +464,23 @@ fn traced_all_direction_jvp_graph_matches_sum_and_finite_difference_sweep() {
 }
 
 #[test]
-fn random_fixture_force_callback_matches_seeded_direct_gradient() {
+fn random_fixture_force_payload_matches_seeded_direct_gradient() {
     let base = random_fixture_links();
     let beta = 5.7;
     let gradient = crate::action_gradient(&base, beta).unwrap();
     let erased: [Tensor; 4] =
-        std::array::from_fn(|mu| Tensor::C64(base.links()[mu].typed().clone()));
+        std::array::from_fn(|mu| Tensor::C64(base.links()[mu].typed().duplicate().unwrap()));
     for seed in [1.0, -2.5, 0.25] {
         let seed_tensor: Tensor = TypedTensor::from_vec_col_major(vec![], vec![seed])
             .unwrap()
             .into();
-        let outputs = WilsonForceOp::new(beta)
-            .unwrap()
-            .execute(&[&erased[0], &erased[1], &erased[2], &erased[3], &seed_tensor])
-            .unwrap();
+        let force = WilsonForceOp::new(beta).unwrap();
+        let outputs = execute_payload(
+            WILSON_FORCE_FAMILY,
+            &force,
+            &[&erased[0], &erased[1], &erased[2], &erased[3], &seed_tensor],
+        )
+        .unwrap();
         for mu in 0..4 {
             for (index, (actual, expected)) in outputs[mu]
                 .as_slice::<Complex64>()
@@ -461,6 +507,7 @@ fn device_placement() -> Placement {
             kind: DeviceKind::Gpu(GpuBackendKind::Cuda),
             ordinal: 0,
         }),
+        cpu_affinity: None,
     }
 }
 
@@ -468,7 +515,7 @@ fn device_c64(shape: Vec<usize>, len: usize) -> Tensor {
     Tensor::C64(
         TypedTensor::from_buffer_col_major(
             shape,
-            Buffer::Backend(Arc::new(BufferHandle::new_with_len(31, len))),
+            StorageBuffer::Backend(Box::new(BackendStorageHandle::new_with_len(31, len))),
             device_placement(),
         )
         .unwrap(),
@@ -479,7 +526,7 @@ fn device_f64(shape: Vec<usize>, len: usize) -> Tensor {
     Tensor::F64(
         TypedTensor::from_buffer_col_major(
             shape,
-            Buffer::Backend(Arc::new(BufferHandle::new_with_len(32, len))),
+            StorageBuffer::Backend(Box::new(BackendStorageHandle::new_with_len(32, len))),
             device_placement(),
         )
         .unwrap(),
@@ -487,52 +534,61 @@ fn device_f64(shape: Vec<usize>, len: usize) -> Tensor {
 }
 
 #[test]
-fn callback_abi_preserves_placement_variants_and_types_domain_errors() {
+fn payload_abi_preserves_placement_variants_and_types_domain_errors() {
     let shape = vec![3, 3, 1, 1, 1, 1];
     let host_link: Tensor =
         TypedTensor::from_vec_col_major(shape.clone(), vec![Complex64::default(); 9])
             .unwrap()
             .into();
     let device_link = device_c64(shape.clone(), 9);
-    let action_error = WilsonActionOp::new(6.0)
-        .unwrap()
-        .execute(&[&device_link, &device_link, &device_link, &device_link])
-        .unwrap_err();
+    let action = WilsonActionOp::new(6.0).unwrap();
+    let action_error = execute_payload(
+        WILSON_ACTION_FAMILY,
+        &action,
+        &[&device_link, &device_link, &device_link, &device_link],
+    )
+    .unwrap_err();
     assert!(matches!(
         action_error,
-        TensorError::BackendFailure {
+        TensorError::RuntimeState {
             op: "TypedTensor::host_data",
             ..
         }
     ));
 
     let device_tangent = device_c64(shape, 9);
-    let jvp_error = WilsonActionJvpOp::new(6.0, vec![1])
-        .unwrap()
-        .execute(&[
+    let jvp = WilsonActionJvpOp::new(6.0, vec![1]).unwrap();
+    let jvp_error = execute_payload(
+        WILSON_ACTION_JVP_FAMILY,
+        &jvp,
+        &[
             &host_link,
             &host_link,
             &host_link,
             &host_link,
             &device_tangent,
-        ])
-        .unwrap_err();
+        ],
+    )
+    .unwrap_err();
     assert!(matches!(
         jvp_error,
-        TensorError::BackendFailure {
+        TensorError::RuntimeState {
             op: "TypedTensor::host_data",
             ..
         }
     ));
 
     let device_seed = device_f64(vec![], 1);
-    let force_error = WilsonForceOp::new(6.0)
-        .unwrap()
-        .execute(&[&host_link, &host_link, &host_link, &host_link, &device_seed])
-        .unwrap_err();
+    let force = WilsonForceOp::new(6.0).unwrap();
+    let force_error = execute_payload(
+        WILSON_FORCE_FAMILY,
+        &force,
+        &[&host_link, &host_link, &host_link, &host_link, &device_seed],
+    )
+    .unwrap_err();
     assert!(matches!(
         force_error,
-        TensorError::BackendFailure {
+        TensorError::RuntimeState {
             op: "TypedTensor::host_data",
             ..
         }
@@ -543,7 +599,7 @@ fn callback_abi_preserves_placement_variants_and_types_domain_errors() {
             WILSON_ACTION_FAMILY,
             GaugeError::InvalidDirection { direction: 4 }
         ),
-        TensorError::InvalidConfig {
+        TensorError::Validation {
             op: WILSON_ACTION_FAMILY,
             ..
         }
