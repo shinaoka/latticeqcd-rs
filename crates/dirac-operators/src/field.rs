@@ -346,6 +346,72 @@ impl FermionField {
         })
     }
 
+    pub(crate) fn ensure_finite(&self) -> Result<(), DiracError> {
+        for value in self.host_data()? {
+            if !value.re.is_finite() || !value.im.is_finite() {
+                return Err(DiracError::NumericalRange);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn copy_from(&mut self, source: &Self) -> Result<(), DiracError> {
+        self.ensure_compatible(source, "copy_from")?;
+        source.ensure_finite()?;
+        let source_data = source.host_data()?;
+        let destination = self.host_data_mut()?;
+        destination.copy_from_slice(source_data);
+        Ok(())
+    }
+
+    pub(crate) fn add_scaled(
+        &mut self,
+        factor: Complex64,
+        source: &Self,
+    ) -> Result<(), DiracError> {
+        self.ensure_compatible(source, "add_scaled")?;
+        if !factor.re.is_finite() || !factor.im.is_finite() {
+            return Err(DiracError::NumericalRange);
+        }
+        let left = self.host_data()?;
+        let right = source.host_data()?;
+        for (left_value, right_value) in left.iter().zip(right) {
+            let value = *left_value + factor * *right_value;
+            if !value.re.is_finite() || !value.im.is_finite() {
+                return Err(DiracError::NumericalRange);
+            }
+        }
+        let destination = self.host_data_mut()?;
+        for (destination_value, right_value) in destination.iter_mut().zip(right) {
+            *destination_value += factor * *right_value;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn add_scaled_self(
+        &mut self,
+        factor: Complex64,
+        source: &Self,
+    ) -> Result<(), DiracError> {
+        self.ensure_compatible(source, "add_scaled_self")?;
+        if !factor.re.is_finite() || !factor.im.is_finite() {
+            return Err(DiracError::NumericalRange);
+        }
+        let left = self.host_data()?;
+        let right = source.host_data()?;
+        for (left_value, right_value) in left.iter().zip(right) {
+            let value = factor * *left_value + *right_value;
+            if !value.re.is_finite() || !value.im.is_finite() {
+                return Err(DiracError::NumericalRange);
+            }
+        }
+        let destination = self.host_data_mut()?;
+        for (destination_value, right_value) in destination.iter_mut().zip(right) {
+            *destination_value = factor * *destination_value + *right_value;
+        }
+        Ok(())
+    }
+
     pub(crate) fn host_data_mut(&mut self) -> Result<&mut [Complex64], DiracError> {
         let found = format!("{:?}", self.tensor.placement());
         self.tensor

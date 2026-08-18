@@ -11,9 +11,15 @@
 mod boundary;
 mod error;
 mod field;
+mod solvers;
 mod wilson;
 
 pub use boundary::FermionBoundary;
-pub use error::DiracError;
+pub use error::{DiracError, SolverError};
 pub use field::FermionField;
-pub use wilson::{FermionOperator, NormalOperator, WilsonAdjoint, WilsonDirac};
+pub use solvers::{
+    bicgstab, conjugate_gradient, ConvergenceBranch, SolverMethod, SolverParams, SolverReport,
+};
+pub use wilson::{
+    FermionOperator, HermitianPositiveOperator, NormalOperator, WilsonAdjoint, WilsonDirac,
+};

@@ -1,6 +1,6 @@
 # Phase 3 fermions
 
-Status: approved; Task A complete, Task B pending
+Status: approved; Tasks A-B complete, Task C pending
 
 ## Goal
 
@@ -212,14 +212,21 @@ pub trait FermionOperator {
     fn components(&self) -> usize;
     fn apply_into(&self, output: &mut FermionField, input: &FermionField)
         -> Result<(), DiracError>;
+    fn apply_into_with_scratch(
+        &self,
+        output: &mut FermionField,
+        input: &FermionField,
+        scratch: &mut [FermionField],
+    ) -> Result<(), DiracError>;
 }
 pub struct WilsonDirac<'a> { /* borrowed links, kappa, boundary */ }
 pub struct WilsonAdjoint<'a> { /* view */ }
 pub struct NormalOperator<O> { /* D†D composition */ }
+pub trait HermitianPositiveOperator: FermionOperator { /* marker */ }
 pub struct SolverParams { /* tolerance, max_iterations */ }
 pub struct SolverReport { /* iterations, recursive and true residuals */ }
-pub fn conjugate_gradient(...);
-pub fn bicgstab(...);
+pub fn conjugate_gradient(...); // output is the transactional initial guess
+pub fn bicgstab(...); // output is the transactional initial guess
 ```
 
 The trait has multiple real implementations (Wilson, adjoint, normal,
@@ -229,13 +236,28 @@ full-field copies. Solvers preallocate scratch once per call and do not allocate
 per iteration.
 
 `SolverParams` requires finite positive absolute squared-residual tolerance and
-positive maximum iterations. Successful reports include initial, recursive,
-and independently recomputed true residual squared. Non-finite coefficients,
-zero/near-zero denominators, stagnation, iteration exhaustion, and wrong
-field/operator shape return typed errors. The output is changed only on
-success. BiCGStab includes the pinned shadow-residual restart but rejects a
-still-singular restart. CG requires a Hermitian positive operator by API type;
-it is used for `D†D` and shifted staggered normal systems. BiCGStab solves `D`.
+positive maximum iterations. Successful reports include method, iterations,
+initial/recursive/true residual squared, tolerance, maximum iterations, restart
+count, and convergence branch. Non-finite intermediates, zero/near-zero
+denominators, singular shadow restart, stagnation, iteration exhaustion, and
+wrong field/operator shape return typed errors. The output is changed only on
+success, and the supplied initial guess is otherwise preserved. BiCGStab
+includes the pinned shadow-residual restart but rejects a still-singular
+restart. CG requires the minimal `HermitianPositiveOperator` marker, already
+implemented by `NormalOperator`; BiCGStab accepts the existing general
+`FermionOperator` contract. Both solvers allocate their solve-local scratch
+once and do not allocate solver fields per iteration; the built-in Wilson and
+normal operators consume that caller-owned workspace. CG is used for `D†D` and
+shifted staggered normal systems; BiCGStab solves `D`.
+
+Task B is implemented in `crates/dirac-operators/src/solvers.rs`, directly
+parallel to LatticeDiracOperators.jl v0.6.4 `src/cgmethods.jl` at
+`bdef628184597815ba3e0cddf2536df767e78a02`: Rust `conjugate_gradient` maps to
+`Dirac_operators.cg` (lines 768–868), and Rust `bicgstab` maps to
+`Dirac_operators.bicgstab` (lines 157–310). The recurrence names and update
+ordering (`r`, `p`, `Ap`, `s`, `t`, `alpha`, `beta`, `omega`) are retained;
+Rust replaces the Julia temporary pool and panic paths with checked algebra,
+typed errors, and transactional commit.
 
 ## Wilson pseudofermions and HMC
 
@@ -343,9 +365,11 @@ section of this document has a `Correct-to-merge` pre-review verdict.
    - crate, errors, field/boundary contracts, gamma/projector kernels,
      `D`, `D†`, and `D†D`;
    - Julia impulse/full-field fixture, adjoint and gamma5 identities.
-2. **Task B: Krylov solvers**
+2. **Task B: Krylov solvers** *(complete; post-review pending)*
    - CG and BiCGStab, reports, transactional output;
-   - dense/small-lattice Julia solutions, true residuals and breakdown tests.
+   - dense/small-lattice Julia solutions, true residuals and breakdown tests;
+   - `fixtures/fermions_task_b` maps Julia `cg`/`bicgstab` to the Rust
+     entrypoints with explicit links, rhs, and zero/nonzero guesses.
 3. **Task C: Wilson pseudofermions and HMC**
    - refresh, action, analytic force, combined leapfrog and Metropolis;
    - Julia action/force/one-trajectory comparison and finite differences.
@@ -380,13 +404,16 @@ cross-language bitwise RNG parity.
 - independent impulse stencil, adjoint inner-product residual, gamma5
   hermiticity, and cold plane-wave checks within `2e-12`.
 
-### Task B
+### Task B *(complete; post-review pending)*
 
 - CG on `D†D` and BiCGStab on `D`, both zero and nonzero initial guesses,
 - solution max residual against Julia within `2e-11`,
 - Rust true relative residual at most `1e-11`,
-- explicit initial convergence, exhaustion, non-finite, and breakdown cases,
-- output bitwise unchanged on every error.
+- explicit initial convergence, exhaustion, non-finite, breakdown, stagnation,
+  singular-shadow-restart, wrong-shape, and wrong-component cases,
+- output bitwise unchanged on every error,
+- fixture metadata parses every declared payload and records the exact Julia
+  parameter keys (`eps`, `maxsteps`, `verbose`) and Rust mapping.
 
 ### Task C
 

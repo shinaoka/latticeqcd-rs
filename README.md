@@ -272,6 +272,30 @@ Its metadata records all block means, independent Julia seeds, provenance,
 schedule, and the fixed six-standard-error comparison criterion. See
 `examples/quenched_heatbath.rs` for a runnable loop.
 
+## Wilson Krylov solvers (Phase 3 Task B)
+
+Task B is complete; independent post-review remains pending. The
+`dirac-operators` crate exposes checked, host-resident `conjugate_gradient`
+for the minimal `HermitianPositiveOperator` contract (currently
+`NormalOperator = D†D`) and `bicgstab` for the existing general
+`FermionOperator` contract. `SolverParams` takes a finite positive absolute
+squared-residual tolerance and a positive iteration limit. Each successful
+`SolverReport` includes recursive and freshly recomputed true residuals; the
+mutable initial guess is committed only after the true-residual gate passes.
+Typed failures cover non-finite intermediates, denominator breakdown, shadow
+restart singularity, stagnation, exhaustion, and incompatible fields.
+
+The implementation is deliberately parallel to
+[LatticeDiracOperators.jl v0.6.4 `cgmethods.jl`](https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/cgmethods.jl): Rust
+`conjugate_gradient` maps to `Dirac_operators.cg` (lines 768–868), and Rust
+`bicgstab` maps to `Dirac_operators.bicgstab` (lines 157–310), retaining the
+`r`, `p`, `Ap`, `s`, `t`, `alpha`, `beta`, and `omega` recurrence names and
+update order without copying Julia's global temporary pool or panic paths.
+The deterministic fixture `fixtures/fermions_task_b` records the Julia keys
+`eps`, `maxsteps`, and `verbose`, maps both entrypoints, compares zero and
+nonzero guesses on explicit nontrivial links, and independently recomputes
+true residuals.
+
 ## Quenched SU(3) HMC
 
 HMC is a fixed-step, CPU-first SU(3) API. The caller owns the evolution context

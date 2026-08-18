@@ -1,3 +1,33 @@
+/// Closed set of solver failures returned by the checked Krylov entrypoints.
+///
+/// # Examples
+///
+/// ```
+/// use dirac_operators::{DiracError, SolverError};
+///
+/// let error = DiracError::from(SolverError::Exhaustion);
+/// assert!(error.to_string().contains("maximum iterations"));
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum SolverError {
+    #[error("solver tolerance must be finite and positive")]
+    InvalidTolerance,
+    #[error("solver maximum iterations must be positive")]
+    InvalidMaximumIterations,
+    #[error("solver encountered a non-finite intermediate")]
+    NonFiniteIntermediate,
+    #[error("solver denominator is zero or near-zero")]
+    Breakdown,
+    #[error("BiCGStab shadow residual remained singular after restart")]
+    SingularShadowRestart,
+    #[error("solver stagnated")]
+    Stagnation,
+    #[error("solver exhausted its maximum iterations")]
+    Exhaustion,
+    #[error("recursive convergence did not pass a fresh true-residual check")]
+    TrueResidualMismatch,
+}
+
 /// Failures returned by validated fermion fields and Wilson operators.
 #[derive(Debug, thiserror::Error)]
 pub enum DiracError {
@@ -56,4 +86,6 @@ pub enum DiracError {
     Gauge(#[from] gaugefields::GaugeError),
     #[error("tensor operation failed: {0}")]
     Tensor(String),
+    #[error("solver operation failed: {0}")]
+    Solver(#[from] SolverError),
 }

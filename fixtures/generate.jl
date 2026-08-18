@@ -2,11 +2,13 @@ import Pkg
 import Random
 
 const FERMIONS_TASK_A_MODE = ARGS == ["fermions_task_a"]
+const FERMIONS_TASK_B_MODE = ARGS == ["fermions_task_b"]
+const FERMIONS_MODE = FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE
 const D1_MODE = isempty(ARGS) || ARGS == ["measurements_task_d1"]
 const D2_MODE = isempty(ARGS) || ARGS == ["gradientflow_task_d2"]
 const REFERENCE_MODE = D1_MODE || D2_MODE
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"] || FERMIONS_TASK_A_MODE)
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2|fermions_task_a]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"] || FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE)
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2|fermions_task_a|fermions_task_b]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -103,7 +105,7 @@ const LATTICEDIRACOPERATORS_CHECKOUT = get(
     "LATTICEDIRACOPERATORS_JL_DIR",
     joinpath(dirname(abspath(REQUESTED_CHECKOUT)), "LatticeDiracOperators.jl"),
 )
-if FERMIONS_TASK_A_MODE
+if FERMIONS_MODE
     isdir(LATTICEDIRACOPERATORS_CHECKOUT) ||
         error("expected LatticeDiracOperators.jl checkout at $LATTICEDIRACOPERATORS_CHECKOUT")
 end
@@ -116,7 +118,7 @@ end
 using NPZ
 import Gaugefields.Temporalfields_module: get_temp
 using LinearAlgebra
-if FERMIONS_TASK_A_MODE
+if FERMIONS_MODE
     @eval using LatticeDiracOperators
 end
 
@@ -170,7 +172,7 @@ if D1_MODE
         error("active QCDMeasurements.jl source does not match the pinned checkout")
 end
 
-if FERMIONS_TASK_A_MODE
+if FERMIONS_MODE
     const LATTICEDIRACOPERATORS_VERSION = string(Base.pkgversion(LatticeDiracOperators))
     const LATTICEDIRACOPERATORS_SOURCE = dirname(dirname(pathof(LatticeDiracOperators)))
     const LATTICEDIRACOPERATORS_COMMIT = readchomp(
@@ -314,6 +316,248 @@ end
 
 if FERMIONS_TASK_A_MODE
     generate_fermions_task_a()
+    exit()
+end
+
+const FERMIONS_TASK_B_EPS = 1.0e-20
+const FERMIONS_TASK_B_MAXSTEPS = 2_000
+
+function fermions_task_b_rhs(lattice)
+    nx, ny, nz, nt = lattice
+    rhs = Array{ComplexF64}(undef, NC, nx, ny, nz, nt, 4)
+    for spin in 1:4, it in 1:nt, iz in 1:nz, iy in 1:ny, ix in 1:nx, color in 1:NC
+        site = (ix - 1) + nx * ((iy - 1) + ny * ((iz - 1) + nz * (it - 1)))
+        flat = (color - 1) + NC * ((spin - 1) + 4 * site)
+        rhs[color, ix, iy, iz, it, spin] = ComplexF64(
+            0.017 * (flat + 1),
+            -0.011 * (2 * flat + 3),
+        )
+    end
+    return rhs
+end
+
+function fermions_task_b_guess(lattice, name)
+    nx, ny, nz, nt = lattice
+    guess = zeros(ComplexF64, NC, nx, ny, nz, nt, 4)
+    name == "zero" && return guess
+    name == "nonzero" || error("unknown Task B guess $name")
+    for spin in 1:4, it in 1:nt, iz in 1:nz, iy in 1:ny, ix in 1:nx, color in 1:NC
+        site = (ix - 1) + nx * ((iy - 1) + ny * ((iz - 1) + nz * (it - 1)))
+        flat = (color - 1) + NC * ((spin - 1) + 4 * site)
+        guess[color, ix, iy, iz, it, spin] = ComplexF64(-0.0009 * flat, 0.0013 * flat)
+    end
+    return guess
+end
+
+function fermions_task_b_field(links, values)
+    field = Initialize_pseudofermion_fields(links[1], "Wilson"; nowing=true)
+    field.f .= values
+    return field
+end
+
+function fermions_task_b_true_residual_squared(operator, solution, rhs)
+    applied = similar(rhs)
+    mul!(applied, operator, solution)
+    return sum(abs2, vec(rhs.f) .- vec(applied.f))
+end
+
+function fermions_task_b_cg_diagnostics(initial, operator, rhs)
+    x = similar(initial)
+    x.f .= initial.f
+    res = similar(rhs)
+    res.f .= rhs.f
+    temp = similar(rhs)
+    mul!(temp, operator, x)
+    LatticeDiracOperators.Dirac_operators.add!(res, -1, temp)
+    initial_residual_squared = real(dot(res, res))
+    if initial_residual_squared < FERMIONS_TASK_B_EPS
+        return (
+            method="cg",
+            iterations=0,
+            recursive_residual_squared=initial_residual_squared,
+            initial_residual_squared=initial_residual_squared,
+            convergence_branch="initial_residual",
+            restart_count=0,
+        )
+    end
+    p = similar(res)
+    p.f .= res.f
+    q = similar(res)
+    c1 = dot(p, p)
+    for iterations in 1:FERMIONS_TASK_B_MAXSTEPS
+        mul!(q, operator, p)
+        alpha = c1 / dot(p, q)
+        LatticeDiracOperators.Dirac_operators.add!(x, alpha, p)
+        LatticeDiracOperators.Dirac_operators.add!(res, -alpha, q)
+        c3 = dot(res, res)
+        recursive_residual_squared = real(c3)
+        if recursive_residual_squared < FERMIONS_TASK_B_EPS
+            return (
+                method="cg",
+                iterations,
+                recursive_residual_squared,
+                initial_residual_squared,
+                convergence_branch="updated_residual",
+                restart_count=0,
+            )
+        end
+        beta = c3 / c1
+        c1 = c3
+        LatticeDiracOperators.Dirac_operators.add!(beta, p, 1, res)
+    end
+    error("Task B Julia CG diagnostic replay exhausted")
+end
+
+function generate_fermions_task_b()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == "9e5719970770f4497405a856315c90bef7f74449" ||
+        error("expected Gaugefields.jl commit 9e5719970770f4497405a856315c90bef7f74449")
+    LATTICEDIRACOPERATORS_VERSION == "0.6.4" ||
+        error("expected LatticeDiracOperators.jl v0.6.4, found $LATTICEDIRACOPERATORS_VERSION")
+    LATTICEDIRACOPERATORS_COMMIT == "bdef628184597815ba3e0cddf2536df767e78a02" ||
+        error("expected LatticeDiracOperators.jl commit bdef628184597815ba3e0cddf2536df767e78a02, found $LATTICEDIRACOPERATORS_COMMIT")
+
+    lattice = (2, 2, 2, 2)
+    links = fermions_task_a_links(lattice)
+    rhs_values = fermions_task_b_rhs(lattice)
+    guesses = Dict(name => fermions_task_b_guess(lattice, name) for name in ("zero", "nonzero"))
+    parameters = Dict{String,Any}(
+        "Dirac_operator" => "Wilson",
+        "κ" => 0.13,
+        "r" => 1.0,
+        "faster version" => false,
+        "verbose_level" => 0,
+        "boundarycondition" => Int8[1, 1, 1, -1],
+        "method_CG" => "cg",
+        "eps_CG" => FERMIONS_TASK_B_EPS,
+        "MaxCGstep" => FERMIONS_TASK_B_MAXSTEPS,
+    )
+    rhs = fermions_task_b_field(links, rhs_values)
+    dirac = Dirac_operator(links, rhs, parameters)
+    normal = DdagD_operator(links, rhs, parameters)
+    out = joinpath(@__DIR__, "fermions_task_b")
+    mkpath(out)
+    for direction in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(direction - 1).npy"), links[direction].U)
+    end
+    NPZ.npzwrite(joinpath(out, "rhs_julia.npy"), rhs_values)
+    NPZ.npzwrite(joinpath(out, "rhs_rust.npy"), permutedims(rhs_values, (1, 6, 2, 3, 4, 5)))
+    for name in ("zero", "nonzero")
+        NPZ.npzwrite(joinpath(out, "guess_$(name)_julia.npy"), guesses[name])
+        NPZ.npzwrite(
+            joinpath(out, "guess_$(name)_rust.npy"),
+            permutedims(guesses[name], (1, 6, 2, 3, 4, 5)),
+        )
+    end
+
+    cases = Dict{String,Any}()
+    for (method, operator, solver) in (
+        ("cg", normal, LatticeDiracOperators.Dirac_operators.cg),
+        ("bicgstab", dirac, LatticeDiracOperators.Dirac_operators.bicgstab),
+    )
+        for guess_name in ("zero", "nonzero")
+            case_name = "$(method)_$(guess_name)"
+            initial = fermions_task_b_field(links, guesses[guess_name])
+            solution = fermions_task_b_field(links, guesses[guess_name])
+            if method == "cg"
+                solver(
+                    solution,
+                    operator,
+                    rhs;
+                    eps=FERMIONS_TASK_B_EPS,
+                    maxsteps=FERMIONS_TASK_B_MAXSTEPS,
+                    verbose=Verbose_print(0),
+                )
+                diagnostics = fermions_task_b_cg_diagnostics(initial, operator, rhs)
+            else
+                diagnostics = solver(
+                    solution,
+                    operator,
+                    rhs;
+                    eps=FERMIONS_TASK_B_EPS,
+                    maxsteps=FERMIONS_TASK_B_MAXSTEPS,
+                    verbose=Verbose_print(0),
+                )
+            end
+            true_residual_squared = fermions_task_b_true_residual_squared(operator, solution, rhs)
+            initial_residual_squared = fermions_task_b_true_residual_squared(operator, initial, rhs)
+            NPZ.npzwrite(joinpath(out, "$(case_name)_solution_julia.npy"), solution.f)
+            NPZ.npzwrite(
+                joinpath(out, "$(case_name)_solution_rust.npy"),
+                permutedims(solution.f, (1, 6, 2, 3, 4, 5)),
+            )
+            cases[case_name] = (
+                method=String(diagnostics.method),
+                guess=guess_name,
+                operator=method == "cg" ? "DdagD" : "D",
+                iterations=diagnostics.iterations,
+                recursive_residual_squared=diagnostics.recursive_residual_squared,
+                initial_residual_squared=initial_residual_squared,
+                true_residual_squared=true_residual_squared,
+                tolerance=FERMIONS_TASK_B_EPS,
+                maximum_iterations=FERMIONS_TASK_B_MAXSTEPS,
+                restart_count=diagnostics.restart_count,
+                convergence_branch=String(diagnostics.convergence_branch),
+            )
+        end
+    end
+
+    open(joinpath(out, "metadata.json"), "w") do io
+        q = Char(34)
+        print(io, "{\n")
+        print(io, "  \"schema\": \"fermions_task_b.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"components\": 4,\n")
+        print(io, "  \"kappa\": 0.13,\n")
+        print(io, "  \"r\": 1.0,\n")
+        print(io, "  \"boundaries\": [1, 1, 1, -1],\n")
+        print(io, "  \"solver_parameters\": {\"tolerance\": ", repr(FERMIONS_TASK_B_EPS),
+            ", \"max_iterations\": ", FERMIONS_TASK_B_MAXSTEPS,
+            ", \"julia_operator_keys\": [\"Dirac_operator\", \"κ\", \"r\", \"faster version\", \"verbose_level\", \"boundarycondition\", \"method_CG\", \"eps_CG\", \"MaxCGstep\"], \"julia_solver_keywords\": [\"eps\", \"maxsteps\", \"verbose\"]},\n")
+        print(io, "  \"gaugefields_jl\": {\"package\": \"Gaugefields.jl\", \"version\": \"$VERSION\", \"commit\": \"$COMMIT\", \"clean\": true},\n")
+        print(io, "  \"latticediracoperators_jl\": {\"package\": \"LatticeDiracOperators.jl\", \"version\": \"$LATTICEDIRACOPERATORS_VERSION\", \"commit\": \"$LATTICEDIRACOPERATORS_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"source_urls\": [\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/cgmethods.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/Diracoperators.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/WilsonFermion/WilsonFermion.jl\"\n")
+        print(io, "  ],\n")
+        print(io, "  \"source_functions\": [\"cg\", \"bicgstab\", \"DdagD_operator\", \"LinearAlgebra.mul!\", \"LinearAlgebra.dot\"],\n")
+        print(io, "  \"entrypoint_map\": [\n")
+        print(io, "    {\"julia\": \"Dirac_operators.cg\", \"julia_source\": \"src/cgmethods.jl:768-868\", \"rust\": \"conjugate_gradient\"},\n")
+        print(io, "    {\"julia\": \"Dirac_operators.bicgstab\", \"julia_source\": \"src/cgmethods.jl:157-310\", \"rust\": \"bicgstab\"},\n")
+        print(io, "    {\"julia\": \"DdagD_operator\", \"julia_source\": \"src/Diracoperators.jl:151-169\", \"rust\": \"NormalOperator\"},\n")
+        print(io, "    {\"julia\": \"LinearAlgebra.mul!\", \"julia_source\": \"src/Diracoperators.jl:415-430\", \"rust\": \"FermionOperator::apply_into\"},\n")
+        print(io, "    {\"julia\": \"LinearAlgebra.dot\", \"julia_source\": \"src/cgmethods.jl:20-48\", \"rust\": \"FermionField::inner_product + checked algebra\"}\n")
+        print(io, "  ],\n")
+        print(io, "  \"layout\": {\"julia_shape\": \"[3,NX,NY,NZ,NT,4]\", \"rust_shape\": \"[3,4,NX,NY,NZ,NT]\", \"conversion\": \"permutedims(array, (1, 6, 2, 3, 4, 5))\", \"permutation\": [1, 6, 2, 3, 4, 5], \"site_order\": \"x fastest\"},\n")
+        print(io, "  \"construction\": \"explicit diagonal SU(3) links, rhs, and zero/nonzero guesses from fixed formulas; no RNG or global state\",\n")
+        print(io, "  \"cases\": {")
+        case_names = sort(collect(keys(cases)))
+        for (index, case_name) in enumerate(case_names)
+            index > 1 && print(io, ",")
+            case = cases[case_name]
+            print(io, "\n    ", q, case_name, q, ": {\"method\": ", q, case.method, q,
+                ", \"guess\": ", q, case.guess, q, ", \"operator\": ", q, case.operator, q,
+                ", \"iterations\": ", case.iterations,
+                ", \"recursive_residual_squared\": ", repr(case.recursive_residual_squared),
+                ", \"initial_residual_squared\": ", repr(case.initial_residual_squared),
+                ", \"true_residual_squared\": ", repr(case.true_residual_squared),
+                ", \"tolerance\": ", repr(case.tolerance),
+                ", \"maximum_iterations\": ", case.maximum_iterations,
+                ", \"restart_count\": ", case.restart_count,
+                ", \"convergence_branch\": ", q, case.convergence_branch, q, "}")
+        end
+        print(io, "\n  },\n")
+        print(io, "  \"files\": [\"u0.npy\", \"u1.npy\", \"u2.npy\", \"u3.npy\", \"rhs_julia.npy\", \"rhs_rust.npy\", \"guess_zero_julia.npy\", \"guess_zero_rust.npy\", \"guess_nonzero_julia.npy\", \"guess_nonzero_rust.npy\", \"cg_zero_solution_julia.npy\", \"cg_zero_solution_rust.npy\", \"cg_nonzero_solution_julia.npy\", \"cg_nonzero_solution_rust.npy\", \"bicgstab_zero_solution_julia.npy\", \"bicgstab_zero_solution_rust.npy\", \"bicgstab_nonzero_solution_julia.npy\", \"bicgstab_nonzero_solution_rust.npy\"],\n")
+        print(io, "  \"comparison\": {\"solution_max_abs_tolerance\": 2e-11, \"rust_true_relative_residual_tolerance\": 1e-11, \"criterion\": \"fresh sum(abs2, b-A*x) independent of recursive residual\"},\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"fermions_task_b\", \"randomness\": \"none\"}\n")
+        print(io, "}\n")
+    end
+end
+
+if FERMIONS_TASK_B_MODE
+    generate_fermions_task_b()
     exit()
 end
 

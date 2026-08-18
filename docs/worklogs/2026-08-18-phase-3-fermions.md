@@ -1,6 +1,6 @@
 # Phase 3 fermions worklog
 
-Status: Task A complete; Task B implementation pending
+Status: Tasks A-B complete; Task C implementation pending
 
 ## Base and integration state
 
@@ -62,7 +62,7 @@ Suspicions are reproduced before being filed as facts.
 | Task | Design | Pre-review | Post-review |
 |---|---|---|---|
 | A: field and Wilson operator | `docs/design/phase-3-fermions.md` Task A | Correct-to-merge | Correct-to-merge |
-| B: CG and BiCGStab | same, Task B | Correct-to-merge | pending |
+| B: CG and BiCGStab | same, Task B | Correct-to-merge | Correct-to-merge |
 | C: Wilson pseudofermion/HMC | same, Task C | Correct-to-merge | pending |
 | D: staggered/multi-shift CG | same, Task D | Correct-to-merge | pending |
 | E: two-flavor RHMC/integration | same, Task E | Correct-to-merge | pending |
@@ -229,3 +229,125 @@ all-target/all-feature Clippy, formatting, and `git diff --check` passed. The
 delta review confirmed both fixes and recorded `Correct-to-merge`; its one new
 Minor count-clarity finding is corrected here from ambiguous "18 focused tests"
 to the measured split above.
+
+## Task B completion evidence
+
+### Sources, RED-first fix, and mapping
+
+Task B was implemented in `crates/dirac-operators/src/solvers.rs`, with the
+minimal checked-algebra seams in `src/field.rs`, the
+`HermitianPositiveOperator` marker and reusable operator workspace in
+`src/wilson.rs`, and typed `SolverError` variants in `src/error.rs`. The Rust
+solver cites and follows the pinned LatticeDiracOperators.jl v0.6.4
+`src/cgmethods.jl` at `bdef628184597815ba3e0cddf2536df767e78a02`:
+`cg` lines 768–868 maps to `conjugate_gradient`, and `bicgstab` lines 157–310
+maps to `bicgstab`. The recurrence names `r`, `p`, `Ap`, `s`, `t`, `alpha`,
+`beta`, and `omega`, including shadow restart and update ordering, remain
+visible in the Rust implementation. Julia's global temporary pool, panic
+paths, unchecked divisions, and silent non-finite values were not copied.
+
+RED-first verification added `solver_reuses_operator_scratch_across_iterations`;
+the focused command first failed because the draft had no reusable operator
+workspace method (`apply_into_with_scratch`). The smallest fix added the
+caller-owned workspace seam, made Wilson and `D†D` consume it transactionally,
+and the same test then passed. Solver-local fields and the two normal-operator
+workspace fields are allocated once per solve; the initial guess is committed
+only after a fresh true-residual check. `SolverReport` records method,
+iterations, initial/recursive/true residual squared, tolerance, maximum
+iterations, restart count, and convergence branch.
+
+### Julia fixture and parity
+
+`fixtures/generate.jl fermions_task_b` was audited and run with explicit
+formula-generated diagonal SU(3) links, rhs, and zero/nonzero guesses; it uses
+no RNG or hidden state. Metadata records all Julia constructor keys
+(`Dirac_operator`, `κ`, `r`, `faster version`, `verbose_level`,
+`boundarycondition`, `method_CG`, `eps_CG`, `MaxCGstep`), solver keywords
+(`eps`, `maxsteps`, `verbose`), layout conversion, source URLs/functions,
+pins, tolerances, entrypoint mappings, and all 18 payload files. The Rust
+fixture integration test parses every metadata field, checks the complete
+payload tree and shapes, and independently recomputes `sum(abs2, rhs - A*x)`.
+
+The generator ran twice with Julia 1.12.5 in the clean external project
+`/tmp/latticeqcd-phase3-julia-env`, with explicit pinned checkouts:
+Gaugefields.jl `9e5719970770f4497405a856315c90bef7f74449` and
+LatticeDiracOperators.jl `bdef628184597815ba3e0cddf2536df767e78a02`.
+Complete-tree hashes matched:
+
+```text
+run 1: 5a20feddcbb04282e4c840ef20c82a8280dbffd4f18616a9cc203a5418760610
+run 2: 5a20feddcbb04282e4c840ef20c82a8280dbffd4f18616a9cc203a5418760610
+```
+
+The focused fixture test reported four cases (CG/BiCGStab × zero/nonzero).
+Maximum Julia/Rust solution residuals were, in case order
+`cg_zero`, `cg_nonzero`, `bicgstab_zero`, `bicgstab_nonzero`,
+`1.58882185807825480e-14`, `1.81153563744117622e-14`,
+`1.60855953235337831e-14`, and `1.63772008528668903e-14`. Independently
+recomputed Rust true relative residuals were
+`1.00972069793319903e-12`, `1.17941961034077306e-12`,
+`1.18441250224484603e-12`, and `1.02620361311686820e-12`; all are below the
+`2e-11` and `1e-11` acceptance thresholds. Rust iterations were 29/29 for CG
+and 32/32 for BiCGStab, with zero fixture restarts.
+
+### Focused error and resource checks
+
+The six solver unit tests cover initial convergence, zero/nonzero guesses,
+exhaustion, non-finite intermediates, denominator breakdown, successful and
+singular shadow restart, stagnation, wrong lattice/components, transactional
+output, and stable recurrence/operator scratch destinations. Fixed linear test
+operators, not call-count hooks, exercise the restart branches. The focused
+`cargo test -p dirac-operators --tests -- --nocapture` run passed 21 tests:
+9 crate unit tests, 8 Task A integration tests, 2 Task B integration tests,
+and one fixture test in each task. Focused all-target/all-feature Clippy passed
+with `-D warnings`.
+
+### Workspace and audit gates
+
+The exact local gates passed from the dedicated worktree target:
+
+```text
+cargo fmt --all                                      PASS
+cargo fmt --all -- --check                           PASS
+cargo check --workspace                              PASS
+cargo test --workspace                               PASS (221 passed, 1 ignored)
+cargo test --workspace --all-features                PASS (231 passed, 1 ignored)
+cargo test --doc --workspace --all-features          PASS (53 passed)
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+                                                       PASS
+cargo doc --workspace --all-features --no-deps       PASS
+```
+
+All five existing examples passed with `--all-features`: `ildg_roundtrip`,
+`quenched_heatbath`, `quenched_hmc`, `traced_wilson_action`, and
+`quenched_measurements`. `git diff --check` passed. The exact tenferro pin
+check found five manifest declarations and nine matching lockfile source
+lines for `c942129974b544225ed963414d7be1300980f901`; stale-symbol, license,
+provenance, and Task B scope checks passed. The three pinned Julia reference
+checkouts remained clean, and no temporary comparison artifacts were created.
+
+Task B implementation is complete; independent post-review found no production
+code defect and recorded `Correct-to-merge`. No commit, push, PR, issue,
+reference checkout, or Task C/D/E implementation was made. Remaining risk is
+limited to the mathematical contract of caller-defined
+`HermitianPositiveOperator` implementations and the documented default
+workspace fallback for custom operators; the built-in Wilson and normal paths
+use the preallocated scratch path verified above.
+
+### Task B post-review findings
+
+`reviewer-flash` reported no Critical or Important finding. Three Minor test
+coverage findings were fixed without changing the Julia-parallel production
+recurrences:
+
+- a fixed identity operator now forces and asserts BiCGStab's
+  `IntermediateResidual` branch, solution update, and true residual;
+- a deliberately call-varying test operator now forces
+  `TrueResidualMismatch` and verifies bitwise transactional output;
+- the fixed restart operator now produces a tiny nonzero shadow product, while
+  direct boundary assertions pin both sides of the `epsilon * scale` restart
+  threshold.
+
+After the fixes, 23 crate tests plus 14 doctests, focused all-target/all-feature
+Clippy, formatting, and `git diff --check` passed. The delta re-review confirmed
+all three fixes, found no remaining issue, and recorded `Correct-to-merge`.

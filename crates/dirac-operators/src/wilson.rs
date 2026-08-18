@@ -54,7 +54,46 @@ pub trait FermionOperator {
     /// The output is not changed when validation or arithmetic fails.
     fn apply_into(&self, output: &mut FermionField, input: &FermionField)
         -> Result<(), DiracError>;
+
+    /// Apply the operator using caller-owned reusable workspace.
+    ///
+    /// The default delegates to [`Self::apply_into`]. Operators with
+    /// solve-local scratch requirements override this method so Krylov loops
+    /// do not allocate fields per iteration.
+    fn apply_into_with_scratch(
+        &self,
+        output: &mut FermionField,
+        input: &FermionField,
+        scratch: &mut [FermionField],
+    ) -> Result<(), DiracError> {
+        let _ = scratch;
+        self.apply_into(output, input)
+    }
 }
+
+/// Marker for the Hermitian-positive contract required by conjugate gradient.
+///
+/// The marker has no runtime methods: an implementation is responsible for
+/// preserving the mathematical contract, while the solver still checks every
+/// arithmetic denominator and residual. The composed Wilson `D†D` operator is
+/// the first implementation; shifted normal operators can implement the same
+/// marker when they are added in a later task.
+///
+/// # Examples
+///
+/// ```
+/// use dirac_operators::{HermitianPositiveOperator, WilsonDirac};
+/// use gaugefields::{cold_su3, LatticeShape4};
+///
+/// fn accepts_hermitian_positive<O: HermitianPositiveOperator>(_: &O) {}
+/// let lattice = LatticeShape4::new([1, 1, 1, 1])?;
+/// let links = cold_su3(lattice)?;
+/// let dirac = WilsonDirac::new(&links, 0.1)?;
+/// let normal = dirac.normal();
+/// accepts_hermitian_positive(&normal);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub trait HermitianPositiveOperator: FermionOperator {}
 
 /// A borrowed, host-side hopping-normalized Wilson operator.
 ///
@@ -191,15 +230,12 @@ impl<'a> WilsonDirac<'a> {
         // `src/WilsonFermion/WilsonFermion.jl` at revision
         // `bdef628184597815ba3e0cddf2536df767e78a02`; the boolean selects
         // the matching rminus-gamma or rplus-gamma projector path.
-        self.validate_operands(
-            output,
-            input,
-            if adjoint {
-                "WilsonAdjoint"
-            } else {
-                "WilsonDirac"
-            },
-        )?;
+        let operation = if adjoint {
+            "WilsonAdjoint"
+        } else {
+            "WilsonDirac"
+        };
+        self.validate_operands(output, input, operation)?;
         let input_data = input.host_data()?;
         let count = self
             .site_stride
@@ -209,6 +245,28 @@ impl<'a> WilsonDirac<'a> {
         self.apply_to_data(&mut values, input_data, adjoint)?;
         output.host_data_mut()?.copy_from_slice(&values);
         Ok(())
+    }
+
+    fn apply_into_kind_with_scratch(
+        &self,
+        output: &mut FermionField,
+        input: &FermionField,
+        adjoint: bool,
+        scratch: &mut FermionField,
+    ) -> Result<(), DiracError> {
+        let operation = if adjoint {
+            "WilsonAdjoint"
+        } else {
+            "WilsonDirac"
+        };
+        self.validate_operands(output, input, operation)?;
+        self.validate_workspace(scratch, operation)?;
+        let input_data = input.host_data()?;
+        {
+            let scratch_data = scratch.host_data_mut()?;
+            self.apply_to_data(scratch_data, input_data, adjoint)?;
+        }
+        output.copy_from(scratch)
     }
 
     fn apply_to_data(
@@ -318,6 +376,35 @@ impl<'a> WilsonDirac<'a> {
         Ok(())
     }
 
+    fn validate_workspace(
+        &self,
+        workspace: &FermionField,
+        operation: &'static str,
+    ) -> Result<(), DiracError> {
+        if workspace.lattice() != self.lattice {
+            return Err(DiracError::LatticeMismatch {
+                operand: operation,
+                expected: self.lattice,
+                found: workspace.lattice(),
+            });
+        }
+        if workspace.components() != 4 {
+            return Err(DiracError::ComponentsMismatch {
+                operand: operation,
+                expected: 4,
+                found: workspace.components(),
+            });
+        }
+        let expected = self
+            .site_stride
+            .checked_mul(self.lattice.nv())
+            .ok_or(DiracError::AllocationOverflow)?;
+        if workspace.host_data()?.len() != expected {
+            return Err(DiracError::StorageInvariant);
+        }
+        Ok(())
+    }
+
     // Julia: `shift_fermion`/`shifted_fermion!` in
     // `src/WilsonFermion/WilsonFermion_4D_nowing.jl` at revision
     // `bdef628184597815ba3e0cddf2536df767e78a02`; this checked helper applies
@@ -366,6 +453,16 @@ impl FermionOperator for WilsonDirac<'_> {
     ) -> Result<(), DiracError> {
         self.apply_into_kind(output, input, false)
     }
+
+    fn apply_into_with_scratch(
+        &self,
+        output: &mut FermionField,
+        input: &FermionField,
+        scratch: &mut [FermionField],
+    ) -> Result<(), DiracError> {
+        let workspace = scratch.first_mut().ok_or(DiracError::StorageInvariant)?;
+        self.apply_into_kind_with_scratch(output, input, false, workspace)
+    }
 }
 
 /// A borrowed view applying the Hermitian adjoint `D†` of a Wilson operator.
@@ -398,6 +495,17 @@ impl FermionOperator for WilsonAdjoint<'_, '_> {
         input: &FermionField,
     ) -> Result<(), DiracError> {
         self.parent.apply_into_kind(output, input, true)
+    }
+
+    fn apply_into_with_scratch(
+        &self,
+        output: &mut FermionField,
+        input: &FermionField,
+        scratch: &mut [FermionField],
+    ) -> Result<(), DiracError> {
+        let workspace = scratch.first_mut().ok_or(DiracError::StorageInvariant)?;
+        self.parent
+            .apply_into_kind_with_scratch(output, input, true, workspace)
     }
 }
 
@@ -457,28 +565,47 @@ impl<'op, 'links> FermionOperator for NormalOperator<&'op WilsonDirac<'links>> {
         output: &mut FermionField,
         input: &FermionField,
     ) -> Result<(), DiracError> {
+        let mut scratch = [
+            FermionField::zeros(self.operator.lattice, 4)?,
+            FermionField::zeros(self.operator.lattice, 4)?,
+        ];
+        self.apply_into_with_scratch(output, input, &mut scratch)
+    }
+
+    fn apply_into_with_scratch(
+        &self,
+        output: &mut FermionField,
+        input: &FermionField,
+        scratch: &mut [FermionField],
+    ) -> Result<(), DiracError> {
         self.operator
             .validate_operands(output, input, "NormalOperator")?;
+        if scratch.len() < 2 {
+            return Err(DiracError::StorageInvariant);
+        }
+        let (first, second) = scratch.split_at_mut(1);
+        let temporary = &mut first[0];
+        let result = &mut second[0];
+        self.operator
+            .validate_workspace(temporary, "NormalOperator")?;
+        self.operator.validate_workspace(result, "NormalOperator")?;
         let input_data = input.host_data()?;
-        let mut temporary = FermionField::zeros(self.operator.lattice, 4)?;
         {
             let temporary_data = temporary.host_data_mut()?;
             self.operator
                 .apply_to_data(temporary_data, input_data, false)?;
         }
-        let temporary_data = temporary.host_data()?;
-        let expected = self
-            .operator
-            .site_stride
-            .checked_mul(self.operator.lattice.nv())
-            .ok_or(DiracError::AllocationOverflow)?;
-        let mut values = vec![C0; expected];
-        self.operator
-            .apply_to_data(&mut values, temporary_data, true)?;
-        output.host_data_mut()?.copy_from_slice(&values);
-        Ok(())
+        {
+            let temporary_data = temporary.host_data()?;
+            let result_data = result.host_data_mut()?;
+            self.operator
+                .apply_to_data(result_data, temporary_data, true)?;
+        }
+        output.copy_from(result)
     }
 }
+
+impl<'op, 'links> HermitianPositiveOperator for NormalOperator<&'op WilsonDirac<'links>> {}
 
 fn validate_kappa(kappa: f64) -> Result<(), DiracError> {
     if !kappa.is_finite() {

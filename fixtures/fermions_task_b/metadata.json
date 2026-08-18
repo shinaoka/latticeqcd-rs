@@ -1,0 +1,36 @@
+{
+  "schema": "fermions_task_b.v1",
+  "lattice": [2, 2, 2, 2],
+  "nc": 3,
+  "components": 4,
+  "kappa": 0.13,
+  "r": 1.0,
+  "boundaries": [1, 1, 1, -1],
+  "solver_parameters": {"tolerance": 1.0e-20, "max_iterations": 2000, "julia_operator_keys": ["Dirac_operator", "κ", "r", "faster version", "verbose_level", "boundarycondition", "method_CG", "eps_CG", "MaxCGstep"], "julia_solver_keywords": ["eps", "maxsteps", "verbose"]},
+  "gaugefields_jl": {"package": "Gaugefields.jl", "version": "0.7.2", "commit": "9e5719970770f4497405a856315c90bef7f74449", "clean": true},
+  "latticediracoperators_jl": {"package": "LatticeDiracOperators.jl", "version": "0.6.4", "commit": "bdef628184597815ba3e0cddf2536df767e78a02", "clean": true},
+  "source_urls": [
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/cgmethods.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/Diracoperators.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/WilsonFermion/WilsonFermion.jl"
+  ],
+  "source_functions": ["cg", "bicgstab", "DdagD_operator", "LinearAlgebra.mul!", "LinearAlgebra.dot"],
+  "entrypoint_map": [
+    {"julia": "Dirac_operators.cg", "julia_source": "src/cgmethods.jl:768-868", "rust": "conjugate_gradient"},
+    {"julia": "Dirac_operators.bicgstab", "julia_source": "src/cgmethods.jl:157-310", "rust": "bicgstab"},
+    {"julia": "DdagD_operator", "julia_source": "src/Diracoperators.jl:151-169", "rust": "NormalOperator"},
+    {"julia": "LinearAlgebra.mul!", "julia_source": "src/Diracoperators.jl:415-430", "rust": "FermionOperator::apply_into"},
+    {"julia": "LinearAlgebra.dot", "julia_source": "src/cgmethods.jl:20-48", "rust": "FermionField::inner_product + checked algebra"}
+  ],
+  "layout": {"julia_shape": "[3,NX,NY,NZ,NT,4]", "rust_shape": "[3,4,NX,NY,NZ,NT]", "conversion": "permutedims(array, (1, 6, 2, 3, 4, 5))", "permutation": [1, 6, 2, 3, 4, 5], "site_order": "x fastest"},
+  "construction": "explicit diagonal SU(3) links, rhs, and zero/nonzero guesses from fixed formulas; no RNG or global state",
+  "cases": {
+    "bicgstab_nonzero": {"method": "bicgstab", "guess": "nonzero", "operator": "D", "iterations": 32, "recursive_residual_squared": 1.9449295927566316e-21, "initial_residual_squared": 1900.0627772155074, "true_residual_squared": 1.9447626694432515e-21, "tolerance": 1.0e-20, "maximum_iterations": 2000, "restart_count": 0, "convergence_branch": "updated_residual"},
+    "bicgstab_zero": {"method": "bicgstab", "guess": "zero", "operator": "D", "iterations": 32, "recursive_residual_squared": 2.591238313489882e-21, "initial_residual_squared": 1846.999264, "true_residual_squared": 2.591125638424003e-21, "tolerance": 1.0e-20, "maximum_iterations": 2000, "restart_count": 0, "convergence_branch": "updated_residual"},
+    "cg_nonzero": {"method": "cg", "guess": "nonzero", "operator": "DdagD", "iterations": 29, "recursive_residual_squared": 2.570107122081855e-21, "initial_residual_squared": 1877.8353897875522, "true_residual_squared": 2.5699653750289313e-21, "tolerance": 1.0e-20, "maximum_iterations": 2000, "restart_count": 0, "convergence_branch": "updated_residual"},
+    "cg_zero": {"method": "cg", "guess": "zero", "operator": "DdagD", "iterations": 29, "recursive_residual_squared": 1.8838649002735366e-21, "initial_residual_squared": 1846.999264, "true_residual_squared": 1.8824534926641538e-21, "tolerance": 1.0e-20, "maximum_iterations": 2000, "restart_count": 0, "convergence_branch": "updated_residual"}
+  },
+  "files": ["u0.npy", "u1.npy", "u2.npy", "u3.npy", "rhs_julia.npy", "rhs_rust.npy", "guess_zero_julia.npy", "guess_zero_rust.npy", "guess_nonzero_julia.npy", "guess_nonzero_rust.npy", "cg_zero_solution_julia.npy", "cg_zero_solution_rust.npy", "cg_nonzero_solution_julia.npy", "cg_nonzero_solution_rust.npy", "bicgstab_zero_solution_julia.npy", "bicgstab_zero_solution_rust.npy", "bicgstab_nonzero_solution_julia.npy", "bicgstab_nonzero_solution_rust.npy"],
+  "comparison": {"solution_max_abs_tolerance": 2e-11, "rust_true_relative_residual_tolerance": 1e-11, "criterion": "fresh sum(abs2, b-A*x) independent of recursive residual"},
+  "generator": {"script": "fixtures/generate.jl", "mode": "fermions_task_b", "randomness": "none"}
+}
