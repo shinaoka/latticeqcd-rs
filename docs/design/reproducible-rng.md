@@ -111,8 +111,8 @@ tolerance rather than claiming cross-platform bit identity.
 
 - Add workspace `rand = "0.8"` and `rand_xoshiro = "0.6"` normal dependencies.
 - Use them from `gaugefields`; remove the duplicate dev-only `rand` declaration.
-- Keep `rand_chacha` dev-only for existing private HMC regression tests.
-- Add no normal-distribution, serialization, or generic RNG dependency.
+- Do not add a separate distribution, serialization, or generic RNG dependency;
+  the later public HMC migration removes the former private ChaCha test support.
 
 ## Julia fixture
 

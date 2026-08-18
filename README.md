@@ -45,8 +45,7 @@ assert!(normals.into_iter().all(f64::is_finite));
 
 An odd normal-fill length discards the final sine result and still consumes a
 complete pair. All-zero states are rejected; state replacement is transactional.
-This primitive does not add a global RNG or change the private HMC regression
-support.
+There is no global RNG or hidden state export.
 
 ## Direct and traced Wilson action
 
@@ -123,5 +122,37 @@ The context reuses its backend, buffer pool, and bounded runtime cache. Stable
 slots `0..3` identify the four directions, and all outputs are validated before
 the links are replaced. Cache entry counts are provider-dependent: the pinned
 cpu-faer unconjugated strided path reports zero retained analysis entries even
-though it uses the same cached session and stable slots. No HMC sampler is
-public; HMC appears only as deterministic crate-private regression support.
+though it uses the same cached session and stable slots.
+
+## Quenched SU(3) HMC
+
+HMC is a fixed-step, CPU-first SU(3) API. The caller owns the evolution context
+and explicitly imports the four-word Julia-compatible RNG state:
+
+```rust
+use gaugefields::{
+    cold_su3, hmc_update, normalized_plaquette, CpuEvolutionContext, HmcParams,
+    LatticeShape4, ReproducibleRng,
+};
+use tenferro_cpu::CpuBackend;
+
+# fn run() -> Result<(), gaugefields::GaugeError> {
+let lattice = LatticeShape4::new([4, 4, 4, 4])?;
+let mut links = cold_su3(lattice)?;
+let mut context = CpuEvolutionContext::new(CpuBackend::new());
+let params = HmcParams::new(5.7, 0.01, 4)?;
+let mut rng = ReproducibleRng::from_state([1, 2, 3, 4])?;
+let mut accepted = 0;
+for _ in 0..3 {
+    accepted += usize::from(hmc_update(&mut context, &mut links, params, &mut rng)?.accepted);
+}
+println!("accepted={accepted}/3 plaquette={}", normalized_plaquette(&links)?);
+# Ok(())
+# }
+```
+
+Each update uses the exact U-P-U trajectory and an unconditional open-unit
+Metropolis draw. Link and momentum inputs are transactional on trajectory
+failure; rejected proposals restore all links. RNG advancement is not rolled
+back: errors consume only draws completed before the error. Heatbath,
+adaptation, alternate actions, and device-resident HMC are not part of this API.

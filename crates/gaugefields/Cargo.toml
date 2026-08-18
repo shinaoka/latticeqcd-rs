@@ -22,6 +22,3 @@ tenferro-runtime.workspace = true
 tenferro-cpu.workspace = true
 tenferro-ad = { workspace = true, optional = true }
 tenferro-internal-ops.workspace = true
-
-[dev-dependencies]
-rand_chacha = "0.3"

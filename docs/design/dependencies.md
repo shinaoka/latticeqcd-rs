@@ -22,10 +22,11 @@ the checked example use their APIs. Extension modules are installed explicitly
 into that runtime; no backend or extension fallback is hidden in gaugefields.
 
 Phase 1 reproducible RNG support is implemented with the normal dependencies
-`rand` 0.8 and `rand_xoshiro` 0.6. The public wrapper uses only
-`Xoshiro256PlusPlus` and `RngCore`; no distribution, serialization, or generic
-RNG dependency is added. `rand_chacha` remains dev-only for the existing
-crate-private HMC regression support.
+`rand` 0.8 and `rand_xoshiro` 0.6. `rand` default features are disabled because
+the public wrapper uses only `RngCore` and `Error`; this also avoids pulling the
+unused `rand_chacha` standard RNG. HMC uses the same wrapper's open-unit and
+uncached Box--Muller methods. No distribution, serialization, generic RNG, or
+ChaCha dependency is added.
 
 Future accelerator work reserves backend-specific feature names. Neither CUDA
 nor ROCm is implemented or declared in this manifest today; adding one requires

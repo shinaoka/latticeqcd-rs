@@ -45,13 +45,27 @@ site-local `Mat3` leaves. Dtype-erased `Tensor` values occur only at fixture and
 extension ABI boundaries; `TracedTensor` is graph metadata rather than storage.
 
 Regenerate all checked fixtures portably from a clean shell with
-`GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia fixtures/generate.jl`.
+`GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia --startup-file=no fixtures/generate.jl`;
+the full mode also regenerates `hmc_trajectory`.
 Regenerate only the stdlib RNG metadata with
 `julia --startup-file=no fixtures/generate.jl reproducible_rng`; this focused
 path does not require a Gaugefields.jl checkout and touches no other fixture.
-The script activates that checkout for the gauge-field path, rejects tracked
-dirty state, and records the loaded package version and clean checkout commit
-in every metadata file.
+Regenerate only the HMC oracle with
+`GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl julia --startup-file=no fixtures/generate.jl hmc_trajectory`;
+this focused path requires the pinned, clean Gaugefields.jl checkout and touches
+only `hmc_trajectory`. The script activates that checkout, rejects tracked dirty
+state, and records the loaded package version and clean checkout commit in every
+metadata file.
+
+TA momentum fields use four independent compact, column-major
+`TypedTensor<f64>` values of shape `[8, NX, NY, NZ, NT]`. The first axis is
+Gell-Mann coefficient order; direction remains separate. `sample_momentum`
+fills directions 0 through 3 in that storage order, and the HMC fixture stores
+those arrays as `p_initial0.npy`/`p_final0.npy` through direction 3. Proposed
+link arrays live beside them as `u_proposed0.npy` through `u_proposed3.npy`.
+The HMC fixture metadata records the exact RNG state, draw-position words,
+Hamiltonian values, formulas, provenance, and observed absolute comparison
+tolerances.
 
 The Julia source roots for this contract are
 `src/4D/nowing/gaugefields_4D_nowing.jl:18` (the rank-six storage type),

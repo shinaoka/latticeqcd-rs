@@ -1,8 +1,8 @@
 import Pkg
 import Random
 
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"])
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"])
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -76,6 +76,7 @@ const REQUESTED_CHECKOUT = get(ENV, "GAUGEFIELDS_JL_DIR", nothing)
 isnothing(REQUESTED_CHECKOUT) && error("set GAUGEFIELDS_JL_DIR to a clean Gaugefields.jl checkout")
 Pkg.activate(REQUESTED_CHECKOUT)
 using Gaugefields
+import Gaugefields.Temporalfields_module: get_temp
 using NPZ
 using LinearAlgebra
 
@@ -83,11 +84,160 @@ const NC = 3
 const BETA = 6.0
 const HMC_EPSILON = 0.5
 const HMC_DT = 0.125
+const HMC_BETA = 5.7
+const HMC_STEP_SIZE = 0.01
+const HMC_STEPS = 4
+const HMC_STATE = (UInt64(1), UInt64(2), UInt64(3), UInt64(4))
+const HMC_JULIA_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
 const VERSION = string(Base.pkgversion(Gaugefields))
 const CHECKOUT = dirname(dirname(pathof(Gaugefields)))
 const COMMIT = readchomp(`git -C $CHECKOUT rev-parse HEAD`)
 const DIRTY = read(`git -C $CHECKOUT status --porcelain --untracked-files=no`, String)
 isempty(strip(DIRTY)) || error("refusing fixture provenance from dirty Gaugefields.jl checkout: $CHECKOUT")
+
+function hmc_open_unit(rng)
+    raw = rand(rng, UInt64)
+    return (Float64(raw >>> 12) + 0.5) * 2.0^-52
+end
+
+function hmc_normal_pair(rng)
+    u1 = hmc_open_unit(rng)
+    u2 = hmc_open_unit(rng)
+    radius = sqrt(-2.0 * log(u1))
+    theta = 2π * u2
+    return radius * cos(theta), radius * sin(theta)
+end
+
+function hmc_fill_momentum!(momentum, rng)
+    for field in momentum
+        values = vec(field.a)
+        index = 1
+        while index <= length(values)
+            first, second = hmc_normal_pair(rng)
+            values[index] = first
+            index += 1
+            if index <= length(values)
+                values[index] = second
+                index += 1
+            end
+        end
+    end
+end
+
+function hmc_action(U, gauge_action, momentum)
+    nc = U[1].NC
+    gauge = -evaluate_GaugeAction(gauge_action, U) / nc
+    kinetic = momentum * momentum / 2
+    return real(gauge + kinetic)
+end
+
+function hmc_u_update!(U, momentum, dt, temps)
+    temp1, it_temp1 = get_temp(temps)
+    temp2, it_temp2 = get_temp(temps)
+    expU, it_expU = get_temp(temps)
+    W, it_W = get_temp(temps)
+    for mu in 1:4
+        exptU!(expU, 0.5 * dt, momentum[mu], [temp1, temp2])
+        mul!(W, expU, U[mu])
+        substitute_U!(U[mu], W)
+    end
+    unused!(temps, it_temp1)
+    unused!(temps, it_temp2)
+    unused!(temps, it_expU)
+    unused!(temps, it_W)
+end
+
+function hmc_p_update!(U, momentum, dt, gauge_action, temps)
+    dSdU, it_dSdU = get_temp(temps)
+    product, it_product = get_temp(temps)
+    for mu in 1:4
+        calc_dSdUμ!(dSdU, gauge_action, mu, U)
+        mul!(product, U[mu], dSdU)
+        Traceless_antihermitian_add!(momentum[mu], -dt / 3.0, product)
+    end
+    unused!(temps, it_dSdU)
+    unused!(temps, it_product)
+end
+
+function hmc_trajectory!(U, momentum, gauge_action, step_size, steps, temps)
+    for _ in 1:steps
+        hmc_u_update!(U, momentum, step_size, temps)
+        hmc_p_update!(U, momentum, step_size, gauge_action, temps)
+        hmc_u_update!(U, momentum, step_size, temps)
+    end
+end
+
+function generate_hmc_trajectory()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == HMC_JULIA_COMMIT || error("expected Gaugefields.jl commit $HMC_JULIA_COMMIT, found $COMMIT")
+    lattice = (2, 2, 2, 2)
+    U = Initialize_Gaugefields(NC, 0, lattice...; condition="cold")
+    momentum = initialize_TA_Gaugefields(U)
+    rng = Random.Xoshiro(HMC_STATE...)
+    hmc_fill_momentum!(momentum, rng)
+    initial_momentum = [copy(field.a) for field in momentum]
+
+    gauge_action = GaugeAction(U)
+    plaqloop = make_loops_fromname("plaquette")
+    append!(plaqloop, plaqloop')
+    push!(gauge_action, HMC_BETA / 2, plaqloop)
+    temps = Temporalfields(U[1]; num=10)
+    initial_hamiltonian = hmc_action(U, gauge_action, momentum)
+
+    proposed = similar(U)
+    substitute_U!(proposed, U)
+    hmc_trajectory!(proposed, momentum, gauge_action, HMC_STEP_SIZE, HMC_STEPS, temps)
+    proposed_hamiltonian = hmc_action(proposed, gauge_action, momentum)
+    delta_h = proposed_hamiltonian - initial_hamiltonian
+    acceptance_probability = delta_h <= 0.0 ? 1.0 : exp(-delta_h)
+    acceptance_uniform = hmc_open_unit(rng)
+    accepted = acceptance_uniform <= acceptance_probability
+    next_raw_word = rand(rng, UInt64)
+
+    out = joinpath(@__DIR__, "hmc_trajectory")
+    mkpath(out)
+    for mu in 1:4
+        NPZ.npzwrite(joinpath(out, "p_initial$(mu - 1).npy"), initial_momentum[mu])
+        NPZ.npzwrite(joinpath(out, "p_final$(mu - 1).npy"), momentum[mu].a)
+        NPZ.npzwrite(joinpath(out, "u_proposed$(mu - 1).npy"), proposed[mu].U)
+    end
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"beta\": ", repr(HMC_BETA), ",\n")
+        print(io, "  \"step_size\": ", repr(HMC_STEP_SIZE), ",\n")
+        print(io, "  \"steps\": ", HMC_STEPS, ",\n")
+        print(io, "  \"initial_rng_state\": [1, 2, 3, 4],\n")
+        print(io, "  \"acceptance_uniform\": ", repr(acceptance_uniform), ",\n")
+        print(io, "  \"acceptance_uniform_bits\": ", reinterpret(UInt64, acceptance_uniform), ",\n")
+        print(io, "  \"next_raw_word\": ", next_raw_word, ",\n")
+        print(io, "  \"initial_hamiltonian\": ", repr(initial_hamiltonian), ",\n")
+        print(io, "  \"proposed_hamiltonian\": ", repr(proposed_hamiltonian), ",\n")
+        print(io, "  \"delta_h\": ", repr(delta_h), ",\n")
+        print(io, "  \"acceptance_probability\": ", repr(acceptance_probability), ",\n")
+        print(io, "  \"accepted\": ", accepted, ",\n")
+        print(io, "  \"array_order\": \"Fortran / Julia column-major; coefficient/site blocks are compact\",\n")
+        print(io, "  \"momentum_files\": [\"p_initial0.npy\", \"p_initial1.npy\", \"p_initial2.npy\", \"p_initial3.npy\"],\n")
+        print(io, "  \"final_momentum_files\": [\"p_final0.npy\", \"p_final1.npy\", \"p_final2.npy\", \"p_final3.npy\"],\n")
+        print(io, "  \"proposed_link_files\": [\"u_proposed0.npy\", \"u_proposed1.npy\", \"u_proposed2.npy\", \"u_proposed3.npy\"],\n")
+        print(io, "  \"open_unit_formula\": \"(Float64(next_u64 >> 12) + 0.5) * 2^-52\",\n")
+        print(io, "  \"box_muller\": \"uncached pairs, u1 then u2, [r*cos(2*pi*u2), r*sin(2*pi*u2)]\",\n")
+        print(io, "  \"trajectory\": \"U <- exp((dt/2)P)U; P <- P - (dt/3)gauge_force(U,beta); U <- exp((dt/2)P)U\",\n")
+        print(io, "  \"gaugefields_jl_version\": \"$VERSION\",\n")
+        print(io, "  \"gaugefields_jl_commit\": \"$COMMIT\",\n")
+        print(io, "  \"source_paths\": {\"hmc\": \"test/HMC_test_nowing.jl\", \"ta\": \"src/TA_Gaugefields.jl; src/4D/TA_gaugefields_4D_serial.jl\"},\n")
+        print(io, "  \"comparison_tolerance\": 2e-13,\n")
+        print(io, "  \"hamiltonian_tolerance\": 2e-12,\n")
+        print(io, "  \"provenance\": \"Generated through Gaugefields.jl's exported field, exptU!, calc_dSdUμ!, Traceless_antihermitian_add!, mul!, and substitute_U! operations, with the HMC_test_nowing temporary-field get_temp seam.\"\n")
+        print(io, "}\n")
+    end
+end
+
+if ARGS == ["hmc_trajectory"]
+    generate_hmc_trajectory()
+    exit()
+end
 
 function json_complex_arrays(io, links)
     print(io, "[")
@@ -277,6 +427,7 @@ function generate_normalize_su3()
 end
 
 generate_reproducible_rng()
+generate_hmc_trajectory()
 generate("cold_1x1x1x1", (1, 1, 1, 1), "cold")
 generate("random_2x2x2x2", (2, 2, 2, 2), "hot"; reproducible=true, write_observables=true)
 generate("random_4x4x4x4", (4, 4, 4, 4), "hot"; reproducible=true, write_observables=true)
