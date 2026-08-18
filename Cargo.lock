@@ -569,6 +569,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "measurements"
+version = "0.1.0"
+dependencies = [
+ "gaugefields",
+ "npyz",
+ "num-complex",
+ "serde_json",
+ "tenferro-cpu",
+ "thiserror 2.0.20",
+ "wilsonloop",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

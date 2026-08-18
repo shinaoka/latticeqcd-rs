@@ -1,8 +1,11 @@
 import Pkg
 import Random
 
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"])
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c]")
+const D1_MODE = isempty(ARGS) || ARGS == ["measurements_task_d1"]
+const D2_MODE = isempty(ARGS) || ARGS == ["gradientflow_task_d2"]
+const REFERENCE_MODE = D1_MODE || D2_MODE
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"])
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -81,11 +84,27 @@ const WILSONLOOP_CHECKOUT = get(
     joinpath(dirname(abspath(REQUESTED_CHECKOUT)), "Wilsonloop.jl"),
 )
 isdir(WILSONLOOP_CHECKOUT) || error("expected Wilsonloop.jl checkout at $WILSONLOOP_CHECKOUT")
-Pkg.activate(REQUESTED_CHECKOUT)
+const QCDMEASUREMENTS_CHECKOUT = get(ENV, "QCDMEASUREMENTS_JL_DIR", nothing)
+if REFERENCE_MODE
+    isempty(get(ENV, "LATTICEQCD_JULIA_PROJECT", "")) &&
+        error("set LATTICEQCD_JULIA_PROJECT for the pinned reference project")
+end
+if D1_MODE
+    isnothing(QCDMEASUREMENTS_CHECKOUT) &&
+        error("set QCDMEASUREMENTS_JL_DIR for measurements_task_d1/default")
+    isdir(QCDMEASUREMENTS_CHECKOUT) ||
+        error("expected QCDMeasurements.jl checkout at $QCDMEASUREMENTS_CHECKOUT")
+end
+const JULIA_PROJECT = get(ENV, "LATTICEQCD_JULIA_PROJECT", "")
+const ACTIVE_PROJECT = isempty(JULIA_PROJECT) ? REQUESTED_CHECKOUT : JULIA_PROJECT
+Pkg.activate(ACTIVE_PROJECT)
 using Gaugefields
 import Wilsonloop
-import Gaugefields.Temporalfields_module: get_temp
+if D1_MODE
+    using QCDMeasurements
+end
 using NPZ
+import Gaugefields.Temporalfields_module: get_temp
 using LinearAlgebra
 
 const NC = 3
@@ -123,6 +142,20 @@ isempty(strip(WILSONLOOP_DIRTY)) || error("refusing fixture provenance from dirt
 read(joinpath(WILSONLOOP_SOURCE, "src", "Wilsonloop.jl")) ==
     read(joinpath(WILSONLOOP_CHECKOUT, "src", "Wilsonloop.jl")) ||
     error("active Wilsonloop.jl source does not match the pinned checkout")
+const QCDMEASUREMENTS_VERSION = D1_MODE ? string(Base.pkgversion(QCDMeasurements)) : ""
+const QCDMEASUREMENTS_SOURCE = D1_MODE ? dirname(dirname(pathof(QCDMeasurements))) : ""
+const QCDMEASUREMENTS_COMMIT = D1_MODE ? readchomp(`git -C $QCDMEASUREMENTS_CHECKOUT rev-parse HEAD`) : ""
+const QCDMEASUREMENTS_DIRTY = D1_MODE ? read(
+    `git -C $QCDMEASUREMENTS_CHECKOUT status --porcelain --untracked-files=all`,
+    String,
+) : ""
+if D1_MODE
+    isempty(strip(QCDMEASUREMENTS_DIRTY)) ||
+        error("refusing fixture provenance from dirty QCDMeasurements.jl checkout: $QCDMEASUREMENTS_CHECKOUT")
+    read(joinpath(QCDMEASUREMENTS_SOURCE, "src", "QCDMeasurements.jl")) ==
+        read(joinpath(QCDMEASUREMENTS_CHECKOUT, "src", "QCDMeasurements.jl")) ||
+        error("active QCDMeasurements.jl source does not match the pinned checkout")
+end
 
 function distinguish_reproducible_directions!(links)
     # Gaugefields.jl deliberately resets StableRNG(123) for each direction.
@@ -399,6 +432,351 @@ end
 
 if ARGS == ["stout_task_c"]
     generate_stout_task_c()
+    exit()
+end
+
+const MEASUREMENTS_TASK_D1_GAUGEFIELDS_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
+const MEASUREMENTS_TASK_D1_WILSONLOOP_COMMIT = "e1a617fdedb19b785f89bdeb13c30e53b20743a7"
+const MEASUREMENTS_TASK_D1_QCDMEASUREMENTS_COMMIT = "9e04c37bbd68712cf7a749ae5aff10eb6aae4566"
+const MEASUREMENTS_TASK_D1_LATTICE = (2, 2, 2, 2)
+const MEASUREMENTS_TASK_D1_BETA = 5.7
+const MEASUREMENTS_TASK_D1_SEED = HEATBATH_SEEDS[2]
+const MEASUREMENTS_TASK_D1_TOLERANCE = 2e-12
+const MEASUREMENTS_TASK_D1_RUST_STATE = (
+    "0x2468ace113579bdf",
+    "0x1111222233334445",
+    "0x5555666677778889",
+    "0x9999aaaabbbbcccd",
+)
+
+function d1_measurement_state(U)
+    return (
+        plaquette=Plaquette_measurement(U),
+        polyakov=Polyakov_measurement(U),
+        topology=Topological_charge_measurement(U; TC_methods=["clover"]),
+    )
+end
+
+function d1_observe(measurements, U)
+    polyakov = get_value(measure(measurements.polyakov, U))
+    topology = get_value(measure(measurements.topology, U))
+    return (
+        plaquette=get_value(measure(measurements.plaquette, U)),
+        polyakov=polyakov,
+        q=topology["clover"],
+    )
+end
+
+function d1_block_summary(blocks)
+    mean_value = sum(blocks) / length(blocks)
+    variance = sum((value - mean_value)^2 for value in blocks) / (length(blocks) - 1)
+    return (
+        block_means=blocks,
+        mean=mean_value,
+        variance=variance,
+        standard_error=sqrt(variance / length(blocks)),
+    )
+end
+
+function d1_heatbath_chain()
+    Random.seed!(MEASUREMENTS_TASK_D1_SEED)
+    U = Initialize_Gaugefields(NC, 0, MEASUREMENTS_TASK_D1_LATTICE...; condition="cold")
+    h = Heatbath(U, MEASUREMENTS_TASK_D1_BETA)
+    measurements = d1_measurement_state(U)
+
+    for _ in 1:HEATBATH_BURN_IN
+        heatbath!(U, h)
+    end
+
+    series = [Float64[] for _ in 1:6]
+    for _ in 1:HEATBATH_BLOCKS
+        block = [Float64[] for _ in 1:6]
+        for _ in 1:HEATBATH_SWEEPS_PER_BLOCK
+            heatbath!(U, h)
+            observation = d1_observe(measurements, U)
+            values = (
+                observation.plaquette,
+                real(observation.polyakov),
+                imag(observation.polyakov),
+                abs(observation.polyakov),
+                observation.q,
+                observation.q^2,
+            )
+            for (index, value) in enumerate(values)
+                push!(block[index], value)
+            end
+        end
+        for index in eachindex(series)
+            push!(series[index], sum(block[index]) / HEATBATH_SWEEPS_PER_BLOCK)
+        end
+    end
+    return map(d1_block_summary, series)
+end
+
+function d1_write_summary(io, name, summary, indent)
+    q = Char(34)
+    print(io, indent, q, name, q, ": {\"block_means\": ", json_number_array(summary.block_means))
+    print(io, ", \"mean\": ", repr(summary.mean))
+    print(io, ", \"variance\": ", repr(summary.variance))
+    print(io, ", \"standard_error\": ", repr(summary.standard_error), "}")
+end
+
+function d1_write_chain(io, summaries)
+    q = Char(34)
+    print(io, "    {\n")
+    print(io, "      \"beta\": ", repr(MEASUREMENTS_TASK_D1_BETA), ",\n")
+    print(io, "      \"julia_seed\": ", MEASUREMENTS_TASK_D1_SEED, ",\n")
+    print(io, "      \"measurements\": ", HEATBATH_BLOCKS * HEATBATH_SWEEPS_PER_BLOCK, ",\n")
+    print(io, "      \"observables\": {\n")
+    names = ("plaquette", "polyakov_real", "polyakov_imag", "polyakov_magnitude", "q", "q_squared")
+    for (index, name) in enumerate(names)
+        d1_write_summary(io, name, summaries[index], "        ")
+        index == length(names) ? print(io, "\n") : print(io, ",\n")
+    end
+    print(io, "      }\n    }")
+end
+
+function d1_representative_path(steps)
+    Wilsonloop.Wilsonline([(abs(step), sign(step)) for step in steps], Dim=4)
+end
+
+function d1_representative_path_matrix(links, steps)
+    loop = d1_representative_path(steps)
+    output = similar(links[1])
+    temp1 = similar(links[1])
+    temp2 = similar(links[1])
+    Gaugefields.evaluate_gaugelinks!(output, loop, links, [temp1, temp2])
+    return copy(output.U[:, :, 1, 1, 1, 1])
+end
+
+function generate_measurements_task_d1()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == MEASUREMENTS_TASK_D1_GAUGEFIELDS_COMMIT ||
+        error("expected Gaugefields.jl commit $MEASUREMENTS_TASK_D1_GAUGEFIELDS_COMMIT, found $COMMIT")
+    WILSONLOOP_VERSION == "0.1.5" ||
+        error("expected Wilsonloop.jl v0.1.5, found $WILSONLOOP_VERSION")
+    WILSONLOOP_COMMIT == MEASUREMENTS_TASK_D1_WILSONLOOP_COMMIT ||
+        error("expected Wilsonloop.jl commit $MEASUREMENTS_TASK_D1_WILSONLOOP_COMMIT, found $WILSONLOOP_COMMIT")
+    QCDMEASUREMENTS_VERSION == "0.2.13" ||
+        error("expected QCDMeasurements.jl v0.2.13, found $QCDMEASUREMENTS_VERSION")
+    QCDMEASUREMENTS_COMMIT == MEASUREMENTS_TASK_D1_QCDMEASUREMENTS_COMMIT ||
+        error("expected QCDMeasurements.jl commit $MEASUREMENTS_TASK_D1_QCDMEASUREMENTS_COMMIT, found $QCDMEASUREMENTS_COMMIT")
+
+    links = Initialize_Gaugefields(
+        NC,
+        0,
+        MEASUREMENTS_TASK_D1_LATTICE...;
+        condition="hot",
+        randomnumber="Reproducible",
+    )
+    distinguish_reproducible_directions!(links)
+    measurements = d1_measurement_state(links)
+    observation = d1_observe(measurements, links)
+    direct_polyakov = calculate_Polyakov_loop(links, similar(links[1]), similar(links[1]))
+    abs(observation.polyakov - direct_polyakov) <= MEASUREMENTS_TASK_D1_TOLERANCE ||
+        error("QCDMeasurements/Gaugefields Polyakov routines disagree")
+
+    out = joinpath(@__DIR__, "measurements_task_d1")
+    mkpath(out)
+    for mu in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(mu - 1).npy"), links[mu].U)
+    end
+
+    representative_paths = (
+        (name="forward", steps=[1]),
+        (name="backward", steps=[-1]),
+        (name="open", steps=[1, 2, -3]),
+        (name="plaquette", steps=[1, 2, -1, -2]),
+        (name="rectangle", steps=[1, 2, 2, -1, -2, -2]),
+        (name="clover_right_bottom", steps=[-2, 1, 2, -1]),
+    )
+    for path in representative_paths
+        value = d1_representative_path_matrix(links, path.steps)
+        NPZ.npzwrite(joinpath(out, "path_$(path.name).npy"), value)
+    end
+    summaries = d1_heatbath_chain()
+
+    open(joinpath(out, "metadata.json"), "w") do io
+        q = Char(34)
+        print(io, "{\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"beta\": ", repr(MEASUREMENTS_TASK_D1_BETA), ",\n")
+        print(io, "  \"expected_observables\": {\n")
+        print(io, "    \"schema\": \"measurements_task_d1.v1\",\n")
+        print(io, "    \"scalar\": {\n")
+        print(io, "      \"polyakov_loop\": {\"real\": ", repr(real(observation.polyakov)), ", \"imag\": ", repr(imag(observation.polyakov)), "},\n")
+        print(io, "      \"clover_topological_charge\": ", repr(observation.q), ",\n")
+        print(io, "      \"clover_topological_charge_squared\": ", repr(observation.q^2), "\n")
+        print(io, "    },\n")
+        print(io, "    \"representative_paths\": {\n")
+        print(io, "      \"origin\": {\"rust_site_index\": 0, \"rust_coordinates\": [0, 0, 0, 0], \"julia_coordinates\": [1, 1, 1, 1]},\n")
+        print(io, "      \"source_functions\": [\"Wilsonloop.Wilsonline\", \"Gaugefields.evaluate_gaugelinks!\"],\n")
+        print(io, "      \"source_urls\": [\"https://github.com/akio-tomiya/Wilsonloop.jl/blob/", WILSONLOOP_COMMIT, "/src/Wilsonloop.jl\", \"https://github.com/shinaoka/Gaugefields.jl/blob/", COMMIT, "/src/AbstractGaugefields.jl\"],\n")
+        print(io, "      \"layout\": {\"matrix\": \"ComplexF64/Complex64; first index is color row, second is color column; Julia [row,column] and Rust Mat3 column-major order\", \"artifact\": \"one NPY ComplexF64/Complex64 [3,3] Fortran-order matrix per path\", \"site\": \"links [row,column,x,y,z,t] with x fastest; output.U[:,:,1,1,1,1] at Julia coordinates [1,1,1,1]\"},\n")
+        print(io, "      \"tolerance\": ", repr(MEASUREMENTS_TASK_D1_TOLERANCE), ",\n")
+        print(io, "      \"paths\": [\n")
+        for (index, path) in enumerate(representative_paths)
+            print(io, "        {\"name\": \"", path.name, "\", \"steps\": ", json_number_array(path.steps), ", \"file\": \"path_", path.name, ".npy\"}")
+            index == length(representative_paths) ? print(io, "\n") : print(io, ",\n")
+        end
+        print(io, "      ]\n")
+        print(io, "    },\n")
+        print(io, "    \"ensemble\": {\n")
+        print(io, "      \"schema\": \"measurements_task_d1_ensemble.v1\",\n")
+        print(io, "      \"chains\": [\n")
+        d1_write_chain(io, summaries)
+        print(io, "\n      ],\n")
+        print(io, "      \"schedule\": {\"initial_condition\": \"cold\", \"burn_in_sweeps\": ", HEATBATH_BURN_IN,
+            ", \"blocks\": ", HEATBATH_BLOCKS, ", \"sweeps_per_block\": ", HEATBATH_SWEEPS_PER_BLOCK,
+            ", \"measurements\": ", HEATBATH_BLOCKS * HEATBATH_SWEEPS_PER_BLOCK,
+            ", \"measurement\": \"after each measured heatbath! sweep\", \"block_statistic\": \"mean of consecutive per-sweep values\", \"standard_error\": \"sample_stddev(block_means) / sqrt(blocks)\", \"max_attempts\": ", HEATBATH_MAX_ATTEMPTS, "},\n")
+        print(io, "      \"comparison\": {\"criterion\": \"abs(mean_rust - mean_julia) <= 6 * sqrt(se_rust^2 + se_julia^2)\", \"sigma_multiplier\": 6.0, \"q_squared_relative_ceiling\": 0.25, \"independent_streams\": true, \"bitwise_trajectory_parity\": false}\n")
+        print(io, "    },\n")
+        print(io, "    \"provenance\": {\n")
+        print(io, "      \"gaugefields_jl\": {\"version\": ", q, VERSION, q, ", \"commit\": ", q, COMMIT, q,
+            ", \"source_functions\": [\"Initialize_Gaugefields\", \"calculate_Polyakov_loop\", \"Heatbath\", \"heatbath!\", \"calculate_Plaquette\"], \"source_urls\": [\"https://github.com/shinaoka/Gaugefields.jl/blob/", COMMIT, "/src/AbstractGaugefields.jl\", \"https://github.com/shinaoka/Gaugefields.jl/blob/", COMMIT, "/src/heatbath/heatbathmodule.jl\"]},\n")
+        print(io, "      \"wilsonloop_jl\": {\"version\": ", q, WILSONLOOP_VERSION, q, ", \"commit\": ", q, WILSONLOOP_COMMIT, q, ", \"source_url\": \"https://github.com/akio-tomiya/Wilsonloop.jl/blob/", WILSONLOOP_COMMIT, "/src/Wilsonloop.jl\"},\n")
+        print(io, "      \"qcdmeasurements_jl\": {\"version\": ", q, QCDMEASUREMENTS_VERSION, q, ", \"commit\": ", q, QCDMEASUREMENTS_COMMIT, q, ", \"source_functions\": [\"Plaquette_measurement\", \"Polyakov_measurement\", \"Topological_charge_measurement\", \"measure\"], \"source_urls\": [\"https://github.com/akio-tomiya/QCDMeasurements.jl/blob/", QCDMEASUREMENTS_COMMIT, "/src/measurements/measure_plaquette.jl\", \"https://github.com/akio-tomiya/QCDMeasurements.jl/blob/", QCDMEASUREMENTS_COMMIT, "/src/measurements/measure_polyakov.jl\", \"https://github.com/akio-tomiya/QCDMeasurements.jl/blob/", QCDMEASUREMENTS_COMMIT, "/src/measurements/measure_topological_charge.jl\"]},\n")
+        print(io, "      \"julia\": {\"version\": ", q, Base.VERSION, q, ", \"source_commit\": ", q, Base.GIT_VERSION_INFO.commit, q, "},\n")
+        print(io, "      \"scalar_field\": {\"condition\": \"hot\", \"randomnumber\": \"Reproducible\", \"direction_disambiguation\": \"direction mu is periodically shifted by +1 along axis mu\", \"layout\": \"ComplexF64 Fortran [row,column,x,y,z,t], x fastest\"},\n")
+        print(io, "      \"rust_rng_state_beta_5_7\": ", json_string_array(MEASUREMENTS_TASK_D1_RUST_STATE), ",\n")
+        print(io, "      \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"measurements_task_d1\", \"oracle_only\": true, \"scalar_tolerance\": ", repr(MEASUREMENTS_TASK_D1_TOLERANCE), "}\n")
+        print(io, "    }\n")
+        print(io, "  },\n")
+        print(io, "  \"gaugefields_jl_version\": ", q, VERSION, q, ",\n")
+        print(io, "  \"gaugefields_jl_commit\": ", q, COMMIT, q, "\n")
+        print(io, "}\n")
+    end
+end
+
+if ARGS == ["measurements_task_d1"]
+    generate_measurements_task_d1()
+    exit()
+end
+
+const GRADIENTFLOW_TASK_D2_GAUGEFIELDS_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
+const GRADIENTFLOW_TASK_D2_WILSONLOOP_COMMIT = "e1a617fdedb19b785f89bdeb13c30e53b20743a7"
+const GRADIENTFLOW_TASK_D2_LATTICE = (2, 2, 2, 2)
+const GRADIENTFLOW_TASK_D2_STEP_SIZE = 0.01
+const GRADIENTFLOW_TASK_D2_TOLERANCE = 5e-12
+
+function gradientflow_task_d2_input()
+    links = Initialize_Gaugefields(
+        NC,
+        0,
+        GRADIENTFLOW_TASK_D2_LATTICE...;
+        condition="hot",
+        randomnumber="Reproducible",
+    )
+    return distinguish_reproducible_directions!(links)
+end
+
+function gradientflow_task_d2_wilson_action()
+    loops = Wilsonloop.Wilsonline{4}[]
+    for mu in 1:3, nu in (mu + 1):4
+        push!(loops, Wilsonloop.make_plaq(mu, nu))
+    end
+    return [loops], [0.5]
+end
+
+function gradientflow_task_d2_mixed_action()
+    plaquettes = Wilsonloop.Wilsonline{4}[]
+    rectangles_nu = Wilsonloop.Wilsonline{4}[]
+    rectangles_mu = Wilsonloop.Wilsonline{4}[]
+    for mu in 1:3, nu in (mu + 1):4
+        push!(plaquettes, Wilsonloop.make_plaq(mu, nu))
+        push!(rectangles_nu, Wilsonloop.Wilsonline([(mu, 1), (nu, 2), (mu, -1), (nu, -2)]))
+        push!(rectangles_mu, Wilsonloop.Wilsonline([(mu, 2), (nu, 1), (mu, -2), (nu, -1)]))
+    end
+    return [plaquettes, rectangles_nu, rectangles_mu], [0.365, -0.155, -0.155]
+end
+
+function gradientflow_task_d2_output(steps, loops, values)
+    links = gradientflow_task_d2_input()
+    flow = Gradientflow_general(
+        links,
+        loops,
+        values;
+        Nflow=steps,
+        eps=GRADIENTFLOW_TASK_D2_STEP_SIZE,
+    )
+    flow!(links, flow)
+    return links
+end
+
+function gradientflow_task_d2_write_links(out, prefix, links)
+    for mu in 1:4
+        NPZ.npzwrite(joinpath(out, "$(prefix)$(mu - 1).npy"), links[mu].U)
+    end
+end
+
+function generate_gradientflow_task_d2()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == GRADIENTFLOW_TASK_D2_GAUGEFIELDS_COMMIT ||
+        error("expected Gaugefields.jl commit $GRADIENTFLOW_TASK_D2_GAUGEFIELDS_COMMIT, found $COMMIT")
+    WILSONLOOP_VERSION == "0.1.5" ||
+        error("expected Wilsonloop.jl v0.1.5, found $WILSONLOOP_VERSION")
+    WILSONLOOP_COMMIT == GRADIENTFLOW_TASK_D2_WILSONLOOP_COMMIT ||
+        error("expected Wilsonloop.jl commit $GRADIENTFLOW_TASK_D2_WILSONLOOP_COMMIT, found $WILSONLOOP_COMMIT")
+
+    out = joinpath(@__DIR__, "gradientflow_task_d2")
+    mkpath(out)
+    input = gradientflow_task_d2_input()
+    gradientflow_task_d2_write_links(out, "u", input)
+
+    wilson_loops, wilson_values = gradientflow_task_d2_wilson_action()
+    wilson_one = gradientflow_task_d2_output(1, wilson_loops, wilson_values)
+    wilson_loops, wilson_values = gradientflow_task_d2_wilson_action()
+    wilson_four = gradientflow_task_d2_output(4, wilson_loops, wilson_values)
+    mixed_loops, mixed_values = gradientflow_task_d2_mixed_action()
+    mixed_one = gradientflow_task_d2_output(1, mixed_loops, mixed_values)
+
+    for (prefix, flowed) in (("flow_one", wilson_one), ("flow_four", wilson_four), ("flow_mixed", mixed_one))
+        for mu in 1:4
+            maximum(abs.(flowed[mu].U .- input[mu].U)) > 1e-8 ||
+                error("gradient flow output is trivial for $prefix, direction=$mu")
+        end
+        gradientflow_task_d2_write_links(out, prefix, flowed)
+    end
+
+    open(joinpath(out, "metadata.json"), "w") do io
+        q = Char(34)
+        print(io, "{\n")
+        print(io, "  \"schema\": \"gradientflow_task_d2.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"condition\": \"hot\",\n")
+        print(io, "  \"randomnumber\": \"Reproducible\",\n")
+        print(io, "  \"direction_disambiguation\": \"direction mu is periodically shifted by +1 along lattice axis mu\",\n")
+        print(io, "  \"step_size\": ", repr(GRADIENTFLOW_TASK_D2_STEP_SIZE), ",\n")
+        print(io, "  \"field_tolerance\": ", repr(GRADIENTFLOW_TASK_D2_TOLERANCE), ",\n")
+        print(io, "  \"gaugefields_jl\": {\"package\": \"Gaugefields.jl\", \"version\": \"$VERSION\", \"commit\": \"$COMMIT\", \"clean\": true},\n")
+        print(io, "  \"wilsonloop_jl\": {\"package\": \"Wilsonloop.jl\", \"version\": \"$WILSONLOOP_VERSION\", \"commit\": \"$WILSONLOOP_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"source_functions\": [\"Initialize_Gaugefields\", \"Wilsonline\", \"make_plaq\", \"Gradientflow_general\", \"GaugeAction\", \"F_update!\", \"flow!\", \"exp_aF_U!\"],\n")
+        print(io, "  \"source_urls\": [\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/smearing/gradientflow.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/action/GaugeActions.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/AbstractGaugefields.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/Wilsonloop.jl/blob/$WILSONLOOP_COMMIT/src/Wilsonloop.jl\"\n")
+        print(io, "  ],\n")
+        print(io, "  \"actions\": {\n")
+        print(io, "    \"wilson\": {\"planes\": [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], \"julia_f\": 0.5, \"rust_c\": 1.0, \"terms\": 6},\n")
+        print(io, "    \"mixed\": {\"planes\": [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]], \"plaquette_julia_f\": 0.365, \"plaquette_rust_c\": 0.73, \"rectangle_julia_f\": -0.155, \"rectangle_rust_c\": -0.31, \"rectangles_per_plane\": 2, \"terms\": 18}\n")
+        print(io, "  },\n")
+        print(io, "  \"coefficient_mapping\": \"Rust c=2*f because Julia inserts f*W and f*W†; Rust evaluates c*sum_x Re tr(W)\",\n")
+        print(io, "  \"force_mapping\": \"Julia calc_dSdU is holomorphic: Rust loop_action_force uses c/2=f per occurrence; dS/dt=-sum(force_a*v_a), and RK3 supplies the negative flow coefficients\",\n")
+        print(io, "  \"routine_order\": \"F0; W1=exp(-eps/4 F0)U; F1; W2=exp(eps*(-8/9 F1+17/36 F0))W1; F2; U'=exp(eps*(-3/4 F2+8/9 F1-17/36 F0))W2\",\n")
+        print(io, "  \"layout\": {\"links\": \"ComplexF64 Fortran [row,column,x,y,z,t]\", \"site_order\": \"x fastest\"},\n")
+        print(io, "  \"files\": [\"u0.npy\", \"u1.npy\", \"u2.npy\", \"u3.npy\", \"flow_one0.npy\", \"flow_one1.npy\", \"flow_one2.npy\", \"flow_one3.npy\", \"flow_four0.npy\", \"flow_four1.npy\", \"flow_four2.npy\", \"flow_four3.npy\", \"flow_mixed0.npy\", \"flow_mixed1.npy\", \"flow_mixed2.npy\", \"flow_mixed3.npy\"],\n")
+        print(io, "  \"comparison\": {\"field_max_abs_tolerance\": ", repr(GRADIENTFLOW_TASK_D2_TOLERANCE), ", \"criterion\": \"maximum absolute complex-component residual over every direction/site/row/column\", \"su3_residuals\": \"unitarity and determinant residuals\", \"plaquette\": \"normalized plaquette initial and final are reported by the Rust parity test\"},\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"gradientflow_task_d2\", \"oracle_only\": true, \"routine\": \"pinned Gaugefields.jl Gradientflow_general plus flow!; no Rust algorithm reimplementation\"}\n")
+        print(io, "}\n")
+    end
+end
+
+if ARGS == ["gradientflow_task_d2"]
+    generate_gradientflow_task_d2()
     exit()
 end
 
@@ -848,3 +1226,5 @@ generate_heatbath_statistics()
 generate_ildg_fixture()
 generate_wilsonloop_task_b()
 generate_stout_task_c()
+generate_measurements_task_d1()
+generate_gradientflow_task_d2()
