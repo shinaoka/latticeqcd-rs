@@ -10,6 +10,7 @@ mod fixture;
 mod force;
 mod heatbath;
 mod hmc;
+mod ildg;
 mod index;
 mod kernel;
 mod mat3;
@@ -31,7 +32,9 @@ pub use hmc::{
     hamiltonian, hmc_update, kinetic_energy, leapfrog_trajectory, sample_momentum, HmcOutcome,
     HmcParams,
 };
+pub use ildg::{read_ildg, write_ildg};
 pub use index::{coords_from_site_index, load_link, neighbor_site, site_index, store_link};
+pub use kernel::HostGaugeLinks;
 pub use mat3::Mat3;
 pub use observables::{measurement_staple, normalized_plaquette, plaquette_sum, wilson_action};
 pub use rng::ReproducibleRng;

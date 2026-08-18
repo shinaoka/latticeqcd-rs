@@ -1,0 +1,22 @@
+{
+  "schema": "ildg_task_a.v1",
+  "lattice": [2, 2, 2, 2],
+  "nc": 3,
+  "condition": "hot",
+  "randomnumber": "Reproducible",
+  "stable_rng_seed": 123,
+  "direction_disambiguation": "direction mu is periodically shifted by +1 along lattice axis mu; preserves site-local SU(3) values",
+  "gaugefields_jl_version": "0.7.2",
+  "gaugefields_jl_commit": "9e5719970770f4497405a856315c90bef7f74449",
+  "source_urls": ["https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/output/ildg_format.jl", "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/4D/nowing/gaugefields_4D_nowing.jl"],
+  "source_functions": ["Initialize_Gaugefields", "save_binarydata layout", "load_binarydata! order"],
+  "writer": "independent manual LIME writer; no c-lime and no incomplete save_binarydata! implementation",
+  "lime": {"header_bytes": 144, "version": 1, "flags": {"format_mb": true, "binary_me": true}, "padding": "8-byte zero padding"},
+  "xml": {"version": "1.0", "field": "su3gauge", "precision": 64, "dimensions": ["lx", "ly", "lz", "lt"]},
+  "binary_layout": "big-endian IEEE Float64; t,z,y,x,mu,row,column,real/imag; Julia first color index is Rust row",
+  "files": ["gauge.ildg", "u0.npy", "u1.npy", "u2.npy", "u3.npy"],
+  "readback_script": "fixtures/check_ildg_readback.jl",
+  "readback": "pinned Gaugefields.jl load_gaugefield! with explicit dimensions; every component bit-exact against u*.npy",
+  "comparison": {"ildg_input": "component bit-exact", "field_max_abs_tolerance": 0.0, "scalar_tolerance": 2e-12},
+  "provenance_note": "Values come from the pinned Gaugefields.jl hot initializer; this independent manual standards-complete LIME framing is validated against Gaugefields.jl layout and does not claim a c-lime writer."
+}

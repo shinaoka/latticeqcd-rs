@@ -22,6 +22,29 @@ Until the API stabilizes, compatibility is clean-break rather than emulation:
 gaugefields-rs targets its recorded tenferro revision and does not carry shims
 for older or newer tenferro APIs.
 
+## Host access and ILDG
+
+`GaugeLinks::host_view()` provides fallible, read-only host access without
+exposing tenferro's storage layout. `read_ildg` and `write_ildg` exchange one
+4D SU(3), Float64 configuration in a minimal ILDG 1.1 LIME message:
+
+```rust
+use gaugefields::{read_ildg, write_ildg};
+
+# fn copy_configuration() -> Result<(), gaugefields::GaugeError> {
+let links = read_ildg("input.ildg")?;
+write_ildg("output.ildg", &links)?;
+# Ok(())
+# }
+```
+
+The I/O boundary is host-only and rejects malformed framing or XML, unsupported
+metadata, wrong payload lengths, non-finite components, and trailing data with
+typed errors. It uses big-endian IEEE Float64 values in
+`t,z,y,x,direction,row,column,real/imaginary` order. Float32, multiple
+configurations, and SciDAC checksum verification are intentionally outside the
+minimal API.
+
 ## Reproducible random streams
 
 `ReproducibleRng` imports Julia's four-word `(s0, s1, s2, s3)` xoshiro256++

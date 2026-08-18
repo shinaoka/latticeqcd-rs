@@ -207,6 +207,53 @@ impl GaugeLinks {
             boundary: Boundary::Periodic,
         })
     }
+
+    /// Validates and borrows this field for read-only host kernels.
+    ///
+    /// The view retains no storage copy and performs the tensor, placement, and
+    /// lattice validation once.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when the field is not host-resident or is not an
+    /// SU(3) field with the validated compact layout.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gaugefields::{cold_su3, LatticeShape4};
+    ///
+    /// let links = cold_su3(LatticeShape4::new([1, 1, 1, 1])?)?;
+    /// let view = links.host_view()?;
+    /// assert_eq!(view.lattice().nv(), 1);
+    /// assert_eq!(view.link(0, 0)?.trace().re, 3.0);
+    /// # Ok::<(), gaugefields::GaugeError>(())
+    /// ```
+    pub fn host_view(&self) -> Result<crate::HostGaugeLinks<'_>, GaugeError> {
+        crate::kernel::HostGaugeLinks::new(self)
+    }
+
+    /// Fallibly duplicates all four link tensors.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed allocation, tensor, or placement error without changing
+    /// this field.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gaugefields::{cold_su3, LatticeShape4};
+    ///
+    /// let links = cold_su3(LatticeShape4::new([1, 1, 1, 1])?)?;
+    /// let copy = links.try_clone()?;
+    /// assert_eq!(copy.lattice(), links.lattice());
+    /// # Ok::<(), gaugefields::GaugeError>(())
+    /// ```
+    pub fn try_clone(&self) -> Result<Self, GaugeError> {
+        duplicate_links(self)
+    }
+
     pub fn links(&self) -> &[GaugeLinkTensor; 4] {
         &self.links
     }
@@ -238,20 +285,16 @@ pub(crate) fn duplicate_links(links: &GaugeLinks) -> Result<GaugeLinks, GaugeErr
         return Err(GaugeError::AllocationOverflow);
     }
     let lattice = links.lattice();
-    let copies =
-        (0..4)
-            .map(|mu| {
-                let tensor = links.links()[mu].typed().duplicate().map_err(|source| {
-                    GaugeError::Evolution {
-                        operation: "GaugeLinks duplicate",
-                        source,
-                    }
-                })?;
-                GaugeLinkTensor::from_typed(tensor, lattice)
-            })
-            .collect::<Result<Vec<_>, GaugeError>>()?
-            .try_into()
-            .map_err(|_| GaugeError::Tensor("GaugeLinks require four tensors".into()))?;
+    let copies = (0..4)
+        .map(|mu| {
+            let tensor = links.links()[mu].typed().duplicate().map_err(|source| {
+                GaugeError::Tensor(format!("GaugeLinks duplicate failed: {source}"))
+            })?;
+            GaugeLinkTensor::from_typed(tensor, lattice)
+        })
+        .collect::<Result<Vec<_>, GaugeError>>()?
+        .try_into()
+        .map_err(|_| GaugeError::Tensor("GaugeLinks require four tensors".into()))?;
     GaugeLinks::new(copies)
 }
 

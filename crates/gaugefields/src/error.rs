@@ -54,6 +54,26 @@ pub enum GaugeError {
     },
     #[error("invalid NPY in direction {mu}: {detail}")]
     Npy { mu: usize, detail: String },
+    #[error("ILDG I/O failed for {path}: {source}")]
+    IldgIo {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("invalid ILDG/LIME structure: {detail}")]
+    IldgFormat { detail: &'static str },
+    #[error("invalid ILDG XML metadata: {detail}")]
+    IldgXml { detail: &'static str },
+    #[error("invalid ILDG binary payload: {detail}")]
+    IldgPayload { detail: &'static str },
+    #[error(
+        "non-finite ILDG component at direction {direction}, site {site}, component {component}"
+    )]
+    IldgNonFinite {
+        direction: usize,
+        site: usize,
+        component: usize,
+    },
     #[error("tenferro tensor construction failed: {0}")]
     Tensor(String),
     #[error("{operation} requires host placement: {source}")]

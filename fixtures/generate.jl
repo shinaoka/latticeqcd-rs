@@ -1,8 +1,8 @@
 import Pkg
 import Random
 
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"])
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"])
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -97,11 +97,143 @@ const HEATBATH_BURN_IN = 512
 const HEATBATH_BLOCKS = 32
 const HEATBATH_SWEEPS_PER_BLOCK = 32
 const HEATBATH_MAX_ATTEMPTS = 100_000
+const ILDG_JULIA_COMMIT = "9e5719970770f4497405a856315c90bef7f74449"
+const ILDG_STABLE_RNG_SEED = 123
+const ILDG_LATTICE = (2, 2, 2, 2)
 const VERSION = string(Base.pkgversion(Gaugefields))
 const CHECKOUT = dirname(dirname(pathof(Gaugefields)))
 const COMMIT = readchomp(`git -C $CHECKOUT rev-parse HEAD`)
 const DIRTY = read(`git -C $CHECKOUT status --porcelain --untracked-files=all`, String)
 isempty(strip(DIRTY)) || error("refusing fixture provenance from dirty Gaugefields.jl checkout: $CHECKOUT")
+
+function distinguish_reproducible_directions!(links)
+    # Gaugefields.jl deliberately resets StableRNG(123) for each direction.
+    # Shift each direction along its matching lattice axis so fixtures detect
+    # direction swaps while preserving every site-local SU(3) value.
+    for mu in 1:4
+        shifts = ntuple(axis -> axis == mu + 2 ? 1 : 0, 6)
+        links[mu].U .= circshift(links[mu].U, shifts)
+    end
+    return links
+end
+
+function ildg_be_bytes(value::UInt64)
+    return UInt8[
+        (value >> 56) & 0xff,
+        (value >> 48) & 0xff,
+        (value >> 40) & 0xff,
+        (value >> 32) & 0xff,
+        (value >> 24) & 0xff,
+        (value >> 16) & 0xff,
+        (value >> 8) & 0xff,
+        value & 0xff,
+    ]
+end
+
+function ildg_append_float64!(payload, value::Float64)
+    append!(payload, ildg_be_bytes(reinterpret(UInt64, value)))
+end
+
+function ildg_write_header(io, flags::UInt16, payload_length::UInt64, record_type::String)
+    bytes = codeunits(record_type)
+    0 < length(bytes) < 128 || error("invalid ILDG record type")
+    all(byte -> 0x20 <= byte <= 0x7e, bytes) || error("invalid ILDG record type")
+    header = zeros(UInt8, 144)
+    copyto!(header, 1, UInt8[0x45, 0x67, 0x89, 0xab])
+    copyto!(header, 5, UInt8[0x00, 0x01])
+    copyto!(header, 7, UInt8[(flags >> 8) & 0xff, flags & 0xff])
+    copyto!(header, 9, ildg_be_bytes(payload_length))
+    copyto!(header, 17, collect(bytes))
+    write(io, header)
+end
+
+function ildg_write_record(io, flags::UInt16, record_type::String, payload::Vector{UInt8})
+    ildg_write_header(io, flags, UInt64(length(payload)), record_type)
+    write(io, payload)
+    padding = mod(-length(payload), 8)
+    padding == 0 || write(io, zeros(UInt8, padding))
+end
+
+function ildg_xml(lattice)
+    return collect(codeunits("""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<ildgFormat xmlns=\"http://www.lqcd.org/ildg\">
+  <version>1.0</version>
+  <field>su3gauge</field>
+  <precision>64</precision>
+  <lx>$(lattice[1])</lx>
+  <ly>$(lattice[2])</ly>
+  <lz>$(lattice[3])</lz>
+  <lt>$(lattice[4])</lt>
+</ildgFormat>
+"""))
+end
+
+function ildg_binary(links, lattice)
+    nx, ny, nz, nt = lattice
+    payload = UInt8[]
+    sizehint!(payload, 4 * 3 * 3 * 2 * 8 * nx * ny * nz * nt)
+    for it in 1:nt, iz in 1:nz, iy in 1:ny, ix in 1:nx, mu in 1:4
+        for row in 1:3, column in 1:3
+            value = links[mu].U[row, column, ix, iy, iz, it]
+            ildg_append_float64!(payload, real(value))
+            ildg_append_float64!(payload, imag(value))
+        end
+    end
+    return payload
+end
+
+function generate_ildg_fixture()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == ILDG_JULIA_COMMIT || error("expected Gaugefields.jl commit $ILDG_JULIA_COMMIT, found $COMMIT")
+    links = Initialize_Gaugefields(
+        NC,
+        0,
+        ILDG_LATTICE...;
+        condition="hot",
+        randomnumber="Reproducible",
+    )
+    distinguish_reproducible_directions!(links)
+    out = joinpath(@__DIR__, "ildg_task_a")
+    mkpath(out)
+    for mu in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(mu - 1).npy"), links[mu].U)
+    end
+    xml = ildg_xml(ILDG_LATTICE)
+    binary = ildg_binary(links, ILDG_LATTICE)
+    open(joinpath(out, "gauge.ildg"), "w") do io
+        ildg_write_record(io, UInt16(0x8000), "ildg-format", xml)
+        ildg_write_record(io, UInt16(0x4000), "ildg-binary-data", binary)
+    end
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n")
+        print(io, "  \"schema\": \"ildg_task_a.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n")
+        print(io, "  \"condition\": \"hot\",\n")
+        print(io, "  \"randomnumber\": \"Reproducible\",\n")
+        print(io, "  \"stable_rng_seed\": ", ILDG_STABLE_RNG_SEED, ",\n")
+        print(io, "  \"direction_disambiguation\": \"direction mu is periodically shifted by +1 along lattice axis mu; preserves site-local SU(3) values\",\n")
+        print(io, "  \"gaugefields_jl_version\": \"$VERSION\",\n")
+        print(io, "  \"gaugefields_jl_commit\": \"$COMMIT\",\n")
+        print(io, "  \"source_urls\": [\"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/output/ildg_format.jl\", \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/nowing/gaugefields_4D_nowing.jl\"],\n")
+        print(io, "  \"source_functions\": [\"Initialize_Gaugefields\", \"save_binarydata layout\", \"load_binarydata! order\"],\n")
+        print(io, "  \"writer\": \"independent manual LIME writer; no c-lime and no incomplete save_binarydata! implementation\",\n")
+        print(io, "  \"lime\": {\"header_bytes\": 144, \"version\": 1, \"flags\": {\"format_mb\": true, \"binary_me\": true}, \"padding\": \"8-byte zero padding\"},\n")
+        print(io, "  \"xml\": {\"version\": \"1.0\", \"field\": \"su3gauge\", \"precision\": 64, \"dimensions\": [\"lx\", \"ly\", \"lz\", \"lt\"]},\n")
+        print(io, "  \"binary_layout\": \"big-endian IEEE Float64; t,z,y,x,mu,row,column,real/imag; Julia first color index is Rust row\",\n")
+        print(io, "  \"files\": [\"gauge.ildg\", \"u0.npy\", \"u1.npy\", \"u2.npy\", \"u3.npy\"],\n")
+        print(io, "  \"readback_script\": \"fixtures/check_ildg_readback.jl\",\n")
+        print(io, "  \"readback\": \"pinned Gaugefields.jl load_gaugefield! with explicit dimensions; every component bit-exact against u*.npy\",\n")
+        print(io, "  \"comparison\": {\"ildg_input\": \"component bit-exact\", \"field_max_abs_tolerance\": 0.0, \"scalar_tolerance\": 2e-12},\n")
+        print(io, "  \"provenance_note\": \"Values come from the pinned Gaugefields.jl hot initializer; this independent manual standards-complete LIME framing is validated against Gaugefields.jl layout and does not claim a c-lime writer.\"\n")
+        print(io, "}\n")
+    end
+end
+
+if ARGS == ["ildg"]
+    generate_ildg_fixture()
+    exit()
+end
 
 function hmc_open_unit(rng)
     raw = rand(rng, UInt64)
@@ -266,15 +398,7 @@ function generate(name, lattice, condition; reproducible=false, write_shifts=fal
     mkpath(out)
     args = reproducible ? (; condition, randomnumber="Reproducible") : (; condition)
     links = Initialize_Gaugefields(NC, 0, lattice...; args...)
-    if reproducible
-        # Gaugefields.jl deliberately resets StableRNG(123) for each direction.
-        # Shift each direction along its matching lattice axis so the fixture
-        # detects direction swaps while preserving every site-local SU(3) value.
-        for mu in 1:4
-            shifts = ntuple(axis -> axis == mu + 2 ? 1 : 0, 6)
-            links[mu].U .= circshift(links[mu].U, shifts)
-        end
-    end
+    reproducible && distinguish_reproducible_directions!(links)
     plaquette_sum = calculate_Plaquette(links, similar(links[1]), similar(links[1]))
     normalized_plaquette = plaquette_sum / (6 * links[1].NV * links[1].NC)
     action = -(BETA / links[1].NC) * plaquette_sum
@@ -554,3 +678,4 @@ generate("shifts_3x2x4x5", (3, 2, 4, 5), "hot"; reproducible=true, write_shifts=
 generate_exp_ta()
 generate_normalize_su3()
 generate_heatbath_statistics()
+generate_ildg_fixture()

@@ -1,13 +1,10 @@
-use crate::{
-    kernel::{validate_beta, PreparedGaugeField},
-    GaugeError, GaugeLinkTensor, GaugeLinks,
-};
+use crate::{kernel::validate_beta, GaugeError, GaugeLinkTensor, GaugeLinks};
 use num_complex::Complex64;
 use tenferro_tensor::TypedTensor;
 
 /// Sum of `Re tr P_mu,nu` over six positive planes and all sites.
 pub fn plaquette_sum(links: &GaugeLinks) -> Result<f64, GaugeError> {
-    PreparedGaugeField::new(links)?.plaquette_sum()
+    links.host_view()?.plaquette_sum()
 }
 /// Plaquette divided by `6 NV NC`.
 pub fn normalized_plaquette(links: &GaugeLinks) -> Result<f64, GaugeError> {
@@ -26,7 +23,7 @@ pub fn measurement_staple(
     if direction >= 4 {
         return Err(GaugeError::InvalidDirection { direction });
     }
-    let prepared = PreparedGaugeField::new(links)?;
+    let prepared = links.host_view()?;
     let value_count = links
         .lattice()
         .nv()

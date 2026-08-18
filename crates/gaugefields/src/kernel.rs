@@ -1,5 +1,6 @@
 use crate::{require_su3, GaugeError, GaugeLinks, LatticeShape4, Mat3};
 use num_complex::Complex64;
+use std::fmt;
 use tenferro_tensor::Tensor;
 
 pub(crate) fn validate_beta(beta: f64) -> Result<(), GaugeError> {
@@ -10,13 +11,25 @@ pub(crate) fn validate_beta(beta: f64) -> Result<(), GaugeError> {
     }
 }
 
-pub(crate) struct PreparedGaugeField<'a> {
+/// Validated, read-only host view of four compact SU(3) link fields.
+///
+/// The view borrows the original tensors and exposes matrix and periodic-site
+/// operations only; it intentionally has no raw-slice accessor.
+pub struct HostGaugeLinks<'a> {
     lattice: LatticeShape4,
     links: [&'a [Complex64]; 4],
     site_strides: [usize; 4],
 }
 
-impl<'a> PreparedGaugeField<'a> {
+impl fmt::Debug for HostGaugeLinks<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HostGaugeLinks")
+            .field("lattice", &self.lattice)
+            .finish()
+    }
+}
+
+impl<'a> HostGaugeLinks<'a> {
     pub(crate) fn new(links: &'a GaugeLinks) -> Result<Self, GaugeError> {
         require_su3(links)?;
         let lattice = links.lattice();
@@ -24,7 +37,7 @@ impl<'a> PreparedGaugeField<'a> {
         let host = |link: &'a crate::GaugeLinkTensor| {
             link.typed()
                 .host_data()
-                .map_err(|source| GaugeError::placement("PreparedGaugeField::new", source))
+                .map_err(|source| GaugeError::placement("GaugeLinks::host_view", source))
         };
         let links = [host(u0)?, host(u1)?, host(u2)?, host(u3)?];
         Self::from_parts(lattice, links)
@@ -61,7 +74,7 @@ impl<'a> PreparedGaugeField<'a> {
         let host = |tensor: &'a tenferro_tensor::TypedTensor<Complex64>| {
             tensor
                 .host_data()
-                .map_err(|source| GaugeError::placement("PreparedGaugeField::from_tensors", source))
+                .map_err(|source| GaugeError::placement("HostGaugeLinks::from_tensors", source))
         };
         Self::from_parts(lattice, [host(u0)?, host(u1)?, host(u2)?, host(u3)?])
     }
@@ -77,7 +90,17 @@ impl<'a> PreparedGaugeField<'a> {
         })
     }
 
-    fn shifted_site(&self, site: usize, mu: usize, forward: bool) -> Result<usize, GaugeError> {
+    /// Returns the site reached by a periodic displacement along one axis.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for an invalid site or direction.
+    pub fn shifted_site(
+        &self,
+        site: usize,
+        direction: usize,
+        displacement: isize,
+    ) -> Result<usize, GaugeError> {
         if site >= self.nv() {
             return Err(GaugeError::SiteOutOfBounds {
                 site,
@@ -87,34 +110,35 @@ impl<'a> PreparedGaugeField<'a> {
         let extent = *self
             .lattice
             .extents()
-            .get(mu)
-            .ok_or(GaugeError::InvalidDirection { direction: mu })?;
-        let stride = self.site_strides[mu];
+            .get(direction)
+            .ok_or(GaugeError::InvalidDirection { direction })?;
+        let stride = self.site_strides[direction];
         let coordinate = (site / stride) % extent;
-        let wrap = (extent - 1)
-            .checked_mul(stride)
+        let extent_i = i128::try_from(extent).map_err(|_| GaugeError::VolumeOverflow)?;
+        let coordinate_i = i128::try_from(coordinate).map_err(|_| GaugeError::VolumeOverflow)?;
+        let shifted = (coordinate_i + displacement as i128).rem_euclid(extent_i);
+        let shifted = usize::try_from(shifted).map_err(|_| GaugeError::VolumeOverflow)?;
+        let base = site
+            .checked_sub(
+                coordinate
+                    .checked_mul(stride)
+                    .ok_or(GaugeError::VolumeOverflow)?,
+            )
             .ok_or(GaugeError::VolumeOverflow)?;
-        // INVARIANT: `site < nv`, positive validated extents, and column-major
-        // strides make both the adjacent step and boundary wrap stay in 0..nv.
-        if forward {
-            if coordinate + 1 < extent {
-                site.checked_add(stride).ok_or(GaugeError::VolumeOverflow)
-            } else {
-                site.checked_sub(wrap).ok_or(GaugeError::VolumeOverflow)
-            }
-        } else if coordinate > 0 {
-            site.checked_sub(stride).ok_or(GaugeError::VolumeOverflow)
-        } else {
-            site.checked_add(wrap).ok_or(GaugeError::VolumeOverflow)
-        }
+        base.checked_add(
+            shifted
+                .checked_mul(stride)
+                .ok_or(GaugeError::VolumeOverflow)?,
+        )
+        .ok_or(GaugeError::VolumeOverflow)
     }
 
     fn plus_site(&self, site: usize, mu: usize) -> Result<usize, GaugeError> {
-        self.shifted_site(site, mu, true)
+        self.shifted_site(site, mu, 1)
     }
 
     fn minus_site(&self, site: usize, mu: usize) -> Result<usize, GaugeError> {
-        self.shifted_site(site, mu, false)
+        self.shifted_site(site, mu, -1)
     }
 
     #[cfg(test)]
@@ -126,13 +150,29 @@ impl<'a> PreparedGaugeField<'a> {
         self.lattice.nv()
     }
 
-    pub(crate) const fn lattice(&self) -> LatticeShape4 {
+    /// Returns the validated lattice shape.
+    pub const fn lattice(&self) -> LatticeShape4 {
         self.lattice
     }
 
-    pub(crate) fn link(&self, mu: usize, site: usize) -> Result<Mat3, GaugeError> {
+    /// Loads one direction/site matrix in the established column-major order.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for an invalid direction, site, or matrix block.
+    pub fn link(&self, mu: usize, site: usize) -> Result<Mat3, GaugeError> {
+        let values = self
+            .links
+            .get(mu)
+            .ok_or(GaugeError::InvalidDirection { direction: mu })?;
+        if site >= self.nv() {
+            return Err(GaugeError::SiteOutOfBounds {
+                site,
+                volume: self.nv(),
+            });
+        }
         Mat3::load(
-            self.links[mu],
+            values,
             site.checked_mul(9).ok_or(GaugeError::AllocationOverflow)?,
         )
     }
@@ -202,7 +242,7 @@ mod tests {
     fn prepared_metadata_is_constant_size_and_neighbors_wrap_exactly() {
         let lattice = LatticeShape4::new([1_000_000, 3, 2, 5]).unwrap();
         let empty = &[][..];
-        let prepared = PreparedGaugeField::from_parts(lattice, [empty; 4]).unwrap();
+        let prepared = HostGaugeLinks::from_parts(lattice, [empty; 4]).unwrap();
         assert!(prepared.auxiliary_metadata_bytes() <= 8 * std::mem::size_of::<usize>());
 
         for site in [0, 1, lattice.nv() / 2, lattice.nv() - 1] {
