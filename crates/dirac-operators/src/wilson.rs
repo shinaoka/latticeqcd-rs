@@ -39,7 +39,7 @@ const GAMMA: [[[Complex64; 4]; 4]; 4] = [
     ],
 ];
 
-type ColorSpinor = [[Complex64; 4]; 3];
+pub(crate) type ColorSpinor = [[Complex64; 4]; 3];
 
 /// The approved common interface for checked fermion operators.
 pub trait FermionOperator {
@@ -218,6 +218,10 @@ impl<'a> WilsonDirac<'a> {
     /// Return the composed normal operator `D†D`.
     pub fn normal(&self) -> NormalOperator<&WilsonDirac<'a>> {
         NormalOperator::new(self)
+    }
+
+    pub(crate) fn host_links(&self) -> &HostGaugeLinks<'a> {
+        &self.links
     }
 
     fn apply_into_kind(
@@ -409,7 +413,7 @@ impl<'a> WilsonDirac<'a> {
     // `src/WilsonFermion/WilsonFermion_4D_nowing.jl` at revision
     // `bdef628184597815ba3e0cddf2536df767e78a02`; this checked helper applies
     // the boundary sign exactly at a wrapped one-hop displacement.
-    fn neighbor(
+    pub(crate) fn neighbor(
         &self,
         site: usize,
         direction: usize,
@@ -607,7 +611,7 @@ impl<'op, 'links> FermionOperator for NormalOperator<&'op WilsonDirac<'links>> {
 
 impl<'op, 'links> HermitianPositiveOperator for NormalOperator<&'op WilsonDirac<'links>> {}
 
-fn validate_kappa(kappa: f64) -> Result<(), DiracError> {
+pub(crate) fn validate_kappa(kappa: f64) -> Result<(), DiracError> {
     if !kappa.is_finite() {
         return Err(DiracError::NonFiniteKappa { found: kappa });
     }
@@ -689,7 +693,7 @@ fn write_site(
 // `src/AbstractFermions_4D.jl::LinearAlgebra.mul!` at revision
 // `bdef628184597815ba3e0cddf2536df767e78a02`, followed by the projector in
 // `src/WilsonFermion/WilsonFermion.jl::Wx!`/`Wdagx_noclover!`.
-fn project_color_spin(
+pub(crate) fn project_color_spin(
     matrix: Mat3,
     input: ColorSpinor,
     direction: usize,
@@ -714,7 +718,11 @@ fn project_color_spin(
 // `src/WilsonFermion/WilsonFermion.jl` at revision
 // `bdef628184597815ba3e0cddf2536df767e78a02`; `gamma_sign` selects one of
 // those two matrices for the matching hop.
-fn project_spin(direction: usize, gamma_sign: i8, input: [Complex64; 4]) -> [Complex64; 4] {
+pub(crate) fn project_spin(
+    direction: usize,
+    gamma_sign: i8,
+    input: [Complex64; 4],
+) -> [Complex64; 4] {
     let mut result = [C0; 4];
     for row in 0..4 {
         let mut value = C0;

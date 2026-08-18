@@ -1,6 +1,6 @@
 # Phase 3 fermions
 
-Status: approved; Tasks A-B complete, Task C pending
+Status: approved; Tasks A-C complete, Task D pending
 
 ## Goal
 
@@ -424,6 +424,25 @@ cross-language bitwise RNG parity.
 - one fixed-momentum trajectory: old/new Hamiltonian, delta-H, proposal links,
   accept decision, and RNG position,
 - reversibility residual at most `2e-10`, exact rollback on rejection/error.
+
+The Julia-parallel map is `sample_pseudofermions!` →
+`WilsonFermiAction::sample_pseudofermion`, `evaluate_FermiAction` →
+`WilsonFermiAction::evaluate`, `calc_UdSfdU!` → `WilsonFermiAction::force`,
+`MDstep!`/`U_update!`/`P_update!` → `wilson_leapfrog_trajectory`, and
+`Traceless_antihermitian_add!` → `Mat3::add_ta_coefficients`. The fixed fixture
+uses Julia 1.12.5 and the clean pinned Gaugefields.jl,
+LatticeDiracOperators.jl, and Wilsonloop.jl checkouts recorded in its metadata
+and generator environment.
+
+Task C finalization evidence is complete-tree hash
+`9462c1e4bf1f46c0929c81fd932f65dbd20f2a2b65168bb65ad8e8a4d92439af` on both
+regenerations. Julia/Rust maximum residuals were `7.16072334609889539e-15`
+for `X`, `6.62422734006908809e-15` for `Y`, `4.54747350886464119e-13` for the
+action, and `5.10702591327572009e-14` for the force. The established all-512
+finite-difference maxima at epsilons `1e-3`, `5e-4`, and `2.5e-4` were
+`5.005235745869641e-7`, `1.262665048074041e-7`, and `3.463491360378157e-8`,
+with `512/512` coefficients passing at `5e-4` and ratios
+`3.964024943514664` and `3.645642262945268`.
 
 ### Task D
 

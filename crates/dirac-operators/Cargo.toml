@@ -13,3 +13,6 @@ tenferro-tensor.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+npyz.workspace = true
+rand.workspace = true
+tenferro-cpu.workspace = true

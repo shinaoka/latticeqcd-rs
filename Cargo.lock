@@ -159,8 +159,11 @@ name = "dirac-operators"
 version = "0.1.0"
 dependencies = [
  "gaugefields",
+ "npyz",
  "num-complex",
+ "rand",
  "serde_json",
+ "tenferro-cpu",
  "tenferro-tensor",
  "thiserror 2.0.20",
 ]

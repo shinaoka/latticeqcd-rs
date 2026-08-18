@@ -1,6 +1,6 @@
 # Phase 3 fermions worklog
 
-Status: Tasks A-B complete; Task C implementation pending
+Status: Tasks A-C complete; Task D implementation pending
 
 ## Base and integration state
 
@@ -63,7 +63,7 @@ Suspicions are reproduced before being filed as facts.
 |---|---|---|---|
 | A: field and Wilson operator | `docs/design/phase-3-fermions.md` Task A | Correct-to-merge | Correct-to-merge |
 | B: CG and BiCGStab | same, Task B | Correct-to-merge | Correct-to-merge |
-| C: Wilson pseudofermion/HMC | same, Task C | Correct-to-merge | pending |
+| C: Wilson pseudofermion/HMC | same, Task C | Correct-to-merge | Correct-to-merge |
 | D: staggered/multi-shift CG | same, Task D | Correct-to-merge | pending |
 | E: two-flavor RHMC/integration | same, Task E | Correct-to-merge | pending |
 | Integrated Phase 3 | full design | Correct-to-merge | pending |
@@ -351,3 +351,95 @@ recurrences:
 After the fixes, 23 crate tests plus 14 doctests, focused all-target/all-feature
 Clippy, formatting, and `git diff --check` passed. The delta re-review confirmed
 all three fixes, found no remaining issue, and recorded `Correct-to-merge`.
+
+## Task C completion evidence
+
+### Julia-parallel action, force, and HMC
+
+Task C adds `wilson_action.rs`, parallel to pinned
+`src/action/WilsonFermiAction.jl`, and `wilson_hmc.rs`, parallel to
+`test/wilsonhmc.jl`. The implementation retains `X=(D†D)^-1 phi`, `Y=D X`,
+the two Julia outer-product force terms, and the U-P-U sequence. Momentum uses
+the reviewed split: gauge force `-dt/NC`, fermion force `-dt`. HMC consumes one
+unconditional Metropolis draw, commits links only on acceptance, and leaves
+links unchanged on trajectory failure or rejection; consumed RNG is not rolled
+back.
+
+The complex Gaussian sampler consumes one Box--Muller pair per complex
+component and scales both real and imaginary parts by `1/sqrt(2)`. Fixed
+fixture fields use explicit arrays rather than RNG.
+
+### Deterministic fixture and force checks
+
+`fixtures/fermions_task_c` contains 28 declared payloads plus metadata. Metadata
+records both pinned revisions, Julia/Rust entrypoint mappings, layout, solver,
+force projection, gauge/fermion scaling, explicit acceptance Xoshiro state, and
+every tolerance. The focused generator was run twice from the clean external
+Julia project; file-by-file comparison was empty and both complete 29-file tree
+hashes were:
+
+```text
+run 1: 9462c1e4bf1f46c0929c81fd932f65dbd20f2a2b65168bb65ad8e8a4d92439af
+run 2: 9462c1e4bf1f46c0929c81fd932f65dbd20f2a2b65168bb65ad8e8a4d92439af
+```
+
+The Rust comparison reported maximum residuals:
+
+```text
+action                       4.55e-13
+X                            7.16e-15
+Y                            6.62e-15
+force                        5.11e-14
+initial Hamiltonian          4.55e-13
+proposed Hamiltonian         4.55e-12
+delta-H                      5.23e-12
+final momentum               4.12e-13
+proposed links               2.89e-15
+```
+
+All 512 force coefficients were checked independently by central differences
+under `U <- exp(epsilon*T_a)U`. For epsilon `[1e-3,5e-4,2.5e-4]`, maximum
+residuals were `[5.00524e-7,1.26267e-7,3.46349e-8]`, with successive ratios
+about `[3.964,3.646]`. The quadratic truncation region is explicit and all 512
+coefficients pass the selected `5e-4` step below `2e-7`.
+
+### Transaction and verification gates
+
+Eight Task C integration tests cover refresh/action, the public HMC surface,
+rejection rollback with acceptance-word consumption, trajectory-error rollback,
+reversibility, fixture action/force/trajectory/RNG parity, all-coefficient
+finite differences, and complex-normal stream scaling. The combined focused
+run passed 5 `task_c` and 3 `task_c_fixture` tests.
+
+The full workspace gates passed on the Task C tree:
+
+```text
+cargo fmt --all -- --check                         PASS
+cargo check --workspace                            PASS
+cargo test --workspace                             PASS (234 passed, 1 ignored)
+cargo test --workspace --all-features              PASS (244 passed, 1 ignored)
+cargo test --doc --workspace --all-features        PASS (56 passed)
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+                                                     PASS
+cargo doc --workspace --all-features --no-deps     PASS
+```
+
+All five existing examples and diff, exact-pin, stale-symbol, license,
+provenance, scope, and clean-reference-checkout audits passed. Task D/E code
+was not added.
+
+### Task C post-review findings
+
+`reviewer-flash` found no production-code defect but required three Minor
+corrections:
+
+- stale pre-final fixture hashes in README, crate rustdoc, and design now use
+  the twice-regenerated final hash `9462c1e4...d92439af`;
+- the public full-HMC smoke test now deterministically asserts acceptance and
+  bitwise link replacement, complementing the existing rejection rollback;
+- reversibility now uses an explicit nonzero pseudofermion and asserts its
+  fermion force is nonzero before the forward/reverse trajectory.
+
+The five Task C public integration tests pass after these corrections. The
+focused delta re-review found no remaining issue and recorded
+`Correct-to-merge`.

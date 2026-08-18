@@ -296,6 +296,63 @@ The deterministic fixture `fixtures/fermions_task_b` records the Julia keys
 nonzero guesses on explicit nontrivial links, and independently recomputes
 true residuals.
 
+## Two-flavor Wilson pseudofermions and HMC (Phase 3 Task C)
+
+The `dirac-operators` crate implements the pinned v0.6.4 two-flavor Wilson
+contract on the host SU(3) path:
+
+```text
+S_f(phi,U) = phi† (D†D)^-1 phi,    phi = D† xi
+```
+
+`WilsonFermiAction` samples `xi` from the caller-owned
+`ReproducibleRng`; each independent real and imaginary normal is scaled by
+`1/sqrt(2)`. Its force solves `X=(D†D)^-1 phi`, `Y=DX`, then applies the
+pinned `TA[-kappa P_- U X_plus ⊗ Y + kappa X ⊗ Y_plus† U† P_+]` formula. The
+fermion TA force has no `1/NC`; the Julia-compatible gauge momentum update
+retains `-step_size/NC` separately.
+
+`wilson_hmc_update` performs a private U-P-U trajectory, evaluates the combined
+Hamiltonian, consumes one unconditional open-unit Metropolis draw, and commits
+links only on acceptance. `wilson_leapfrog_trajectory` commits both links and
+momentum only after the complete trajectory succeeds; rejection and errors leave
+caller-owned fields unchanged. The fixed Julia action/X/Y/force/trajectory
+oracle is [`fixtures/fermions_task_c`](fixtures/fermions_task_c), generated
+against LatticeDiracOperators.jl v0.6.4 and Gaugefields.jl v0.7.2. Task C is
+implementation-complete; independent post-review remains pending.
+
+Regenerate it twice from the clean external project and verify the complete-tree
+hashes:
+
+```bash
+export LATTICEQCD_JULIA_PROJECT=/tmp/latticeqcd-phase3-julia-env
+export GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl
+export LATTICEDIRACOPERATORS_JL_DIR=/path/to/LatticeDiracOperators.jl
+export WILSONLOOP_JL_DIR=/path/to/Wilsonloop.jl
+julia --startup-file=no --project="$LATTICEQCD_JULIA_PROJECT" \
+  fixtures/generate.jl fermions_task_c
+```
+
+The Julia-parallel entrypoints are `sample_pseudofermions!` →
+`WilsonFermiAction::sample_pseudofermion`, `evaluate_FermiAction` →
+`WilsonFermiAction::evaluate`, `calc_UdSfdU!` → `WilsonFermiAction::force`,
+and `MDstep!`/`U_update!`/`P_update!` →
+`wilson_leapfrog_trajectory`; `Traceless_antihermitian_add!` maps to
+`Mat3::add_ta_coefficients`. The generator uses Julia 1.12.5 with clean
+Gaugefields.jl `9e5719970770f4497405a856315c90bef7f74449`,
+LatticeDiracOperators.jl `bdef628184597815ba3e0cddf2536df767e78a02`, and
+Wilsonloop.jl `e1a617fdedb19b785f89bdeb13c30e53b20743a7` checkouts.
+
+Finalization evidence: the complete `fermions_task_c` tree hash was
+`9462c1e4bf1f46c0929c81fd932f65dbd20f2a2b65168bb65ad8e8a4d92439af` on both
+runs. Julia/Rust maximum residuals were `7.16072334609889539e-15` for `X`,
+`6.62422734006908809e-15` for `Y`, `4.54747350886464119e-13` for the action,
+and `5.10702591327572009e-14` for the force. The all-coefficient central
+finite-difference series at epsilons `1e-3`, `5e-4`, and `2.5e-4` was
+`5.005235745869641e-7`, `1.262665048074041e-7`, and `3.463491360378157e-8`;
+all `512/512` coefficients passed at `5e-4`, with ratios `3.964024943514664`
+and `3.645642262945268`.
+
 ## Quenched SU(3) HMC
 
 HMC is a fixed-step, CPU-first SU(3) API. The caller owns the evolution context

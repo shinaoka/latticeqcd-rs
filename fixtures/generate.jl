@@ -3,12 +3,13 @@ import Random
 
 const FERMIONS_TASK_A_MODE = ARGS == ["fermions_task_a"]
 const FERMIONS_TASK_B_MODE = ARGS == ["fermions_task_b"]
-const FERMIONS_MODE = FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE
+const FERMIONS_TASK_C_MODE = ARGS == ["fermions_task_c"]
+const FERMIONS_MODE = FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE || FERMIONS_TASK_C_MODE
 const D1_MODE = isempty(ARGS) || ARGS == ["measurements_task_d1"]
 const D2_MODE = isempty(ARGS) || ARGS == ["gradientflow_task_d2"]
 const REFERENCE_MODE = D1_MODE || D2_MODE
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"] || FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE)
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2|fermions_task_a|fermions_task_b]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"] || FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE || FERMIONS_TASK_C_MODE)
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2|fermions_task_a|fermions_task_b|fermions_task_c]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -558,6 +559,225 @@ end
 
 if FERMIONS_TASK_B_MODE
     generate_fermions_task_b()
+    exit()
+end
+
+const FERMIONS_TASK_C_EPS = 1.0e-20
+const FERMIONS_TASK_C_MAXSTEPS = 2_000
+const FERMIONS_TASK_C_BETA = 5.7
+const FERMIONS_TASK_C_KAPPA = 0.13
+const FERMIONS_TASK_C_STEP_SIZE = 0.002
+const FERMIONS_TASK_C_STEPS = 2
+const FERMIONS_TASK_C_ACCEPTANCE_STATE = (UInt64(0x434143434550545f), UInt64(17), UInt64(29), UInt64(43))
+
+function fermions_task_c_xi(lattice)
+    nx, ny, nz, nt = lattice
+    xi = Array{ComplexF64}(undef, NC, nx, ny, nz, nt, 4)
+    for spin in 1:4, it in 1:nt, iz in 1:nz, iy in 1:ny, ix in 1:nx, color in 1:NC
+        site = (ix - 1) + nx * ((iy - 1) + ny * ((iz - 1) + nz * (it - 1)))
+        flat = (color - 1) + NC * ((spin - 1) + 4 * site)
+        xi[color, ix, iy, iz, it, spin] = ComplexF64(
+            0.021 * (flat + 1) - 0.004 * (spin - 1),
+            -0.015 * (flat + 2) + 0.003 * (color - 1),
+        )
+    end
+    return xi
+end
+
+function fermions_task_c_momentum(links)
+    p = initialize_TA_Gaugefields(links)
+    nx, ny, nz, nt = links[1].NV == 0 ? (0, 0, 0, 0) : size(links[1].U)[3:6]
+    for mu in 1:4, it in 1:nt, iz in 1:nz, iy in 1:ny, ix in 1:nx, a in 1:8
+        site = (ix - 1) + nx * ((iy - 1) + ny * ((iz - 1) + nz * (it - 1)))
+        p[mu].a[a, ix, iy, iz, it] =
+            0.007 * (a + 2 * mu) + 0.0011 * site - 0.0007 * (a * mu)
+    end
+    return p
+end
+
+function fermions_task_c_u_update!(U, momentum, dt, temps)
+    temp1, it_temp1 = get_temp(temps)
+    temp2, it_temp2 = get_temp(temps)
+    expU, it_expU = get_temp(temps)
+    W, it_W = get_temp(temps)
+    try
+        for mu in 1:4
+            exptU!(expU, 0.5 * dt, momentum[mu], [temp1, temp2])
+            mul!(W, expU, U[mu])
+            substitute_U!(U[mu], W)
+        end
+    finally
+        unused!(temps, it_temp1)
+        unused!(temps, it_temp2)
+        unused!(temps, it_expU)
+        unused!(temps, it_W)
+    end
+end
+
+function fermions_task_c_gauge_p_update!(U, momentum, dt, gauge_action, temps)
+    dSdU, it_dSdU = get_temp(temps)
+    product, it_product = get_temp(temps)
+    try
+        for mu in 1:4
+            calc_dSdUμ!(dSdU, gauge_action, mu, U)
+            mul!(product, U[mu], dSdU)
+            Traceless_antihermitian_add!(momentum[mu], -dt / 3.0, product)
+        end
+    finally
+        unused!(temps, it_dSdU)
+        unused!(temps, it_product)
+    end
+end
+
+function fermions_task_c_fermion_p_update!(U, momentum, dt, fermi_action, phi)
+    raw_force = [similar(U[1]) for _ in 1:4]
+    calc_UdSfdU!(raw_force, fermi_action, U, phi)
+    for mu in 1:4
+        Traceless_antihermitian_add!(momentum[mu], -dt, raw_force[mu])
+    end
+end
+
+function fermions_task_c_hamiltonian(U, gauge_action, momentum, fermion_action_value)
+    nc = U[1].NC
+    return real(-evaluate_GaugeAction(gauge_action, U) / nc + momentum * momentum / 2 + fermion_action_value)
+end
+
+function fermions_task_c_trajectory!(U, momentum, gauge_action, fermi_action, phi, dt, steps)
+    temps = Temporalfields(U[1]; num=10)
+    for _ in 1:steps
+        fermions_task_c_u_update!(U, momentum, dt, temps)
+        fermions_task_c_gauge_p_update!(U, momentum, dt, gauge_action, temps)
+        fermions_task_c_fermion_p_update!(U, momentum, dt, fermi_action, phi)
+        fermions_task_c_u_update!(U, momentum, dt, temps)
+    end
+end
+
+function generate_fermions_task_c()
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == "9e5719970770f4497405a856315c90bef7f74449" ||
+        error("expected Gaugefields.jl commit 9e5719970770f4497405a856315c90bef7f74449")
+    LATTICEDIRACOPERATORS_VERSION == "0.6.4" ||
+        error("expected LatticeDiracOperators.jl v0.6.4, found $LATTICEDIRACOPERATORS_VERSION")
+    LATTICEDIRACOPERATORS_COMMIT == "bdef628184597815ba3e0cddf2536df767e78a02" ||
+        error("expected LatticeDiracOperators.jl commit bdef628184597815ba3e0cddf2536df767e78a02")
+
+    lattice = (2, 2, 2, 2)
+    links = fermions_task_a_links(lattice)
+    xi_values = fermions_task_c_xi(lattice)
+    xi = fermions_task_a_field(links, xi_values)
+    parameters = Dict{String,Any}(
+        "Dirac_operator" => "Wilson",
+        "κ" => FERMIONS_TASK_C_KAPPA,
+        "r" => 1.0,
+        "faster version" => false,
+        "verbose_level" => 0,
+        "boundarycondition" => Int8[1, 1, 1, -1],
+        "method_CG" => "bicg",
+        "eps_CG" => FERMIONS_TASK_C_EPS,
+        "MaxCGstep" => FERMIONS_TASK_C_MAXSTEPS,
+    )
+    dirac = Dirac_operator(links, xi, parameters)
+    fermi_action = FermiAction(dirac, Dict())
+    phi = similar(xi)
+    sample_pseudofermions!(phi, links, fermi_action, xi)
+
+    normal = DdagD_operator(links, xi, parameters)
+    x = similar(xi)
+    solve_DinvX!(x, normal, phi)
+    y = similar(xi)
+    mul!(y, dirac, x)
+    action = real(dot(phi, x))
+    raw_force = [similar(links[1]) for _ in 1:4]
+    calc_UdSfdU!(raw_force, fermi_action, links, phi)
+    force = initialize_TA_Gaugefields(links)
+    for mu in 1:4
+        Traceless_antihermitian_add!(force[mu], 1.0, raw_force[mu])
+    end
+
+    gauge_action = GaugeAction(links)
+    plaqloop = make_loops_fromname("plaquette")
+    append!(plaqloop, plaqloop')
+    push!(gauge_action, FERMIONS_TASK_C_BETA / 2, plaqloop)
+    initial_momentum = fermions_task_c_momentum(links)
+    proposed = similar(links)
+    substitute_U!(proposed, links)
+    momentum = initialize_TA_Gaugefields(links)
+    for mu in 1:4
+        momentum[mu].a .= initial_momentum[mu].a
+    end
+    h_initial = fermions_task_c_hamiltonian(links, gauge_action, momentum, action)
+    fermions_task_c_trajectory!(proposed, momentum, gauge_action, fermi_action, phi,
+        FERMIONS_TASK_C_STEP_SIZE, FERMIONS_TASK_C_STEPS)
+    h_proposed = fermions_task_c_hamiltonian(
+        proposed,
+        gauge_action,
+        momentum,
+        evaluate_FermiAction(fermi_action, proposed, phi),
+    )
+    delta_h = h_proposed - h_initial
+    probability = delta_h <= 0.0 ? 1.0 : exp(-delta_h)
+    acceptance_rng = Random.Xoshiro(FERMIONS_TASK_C_ACCEPTANCE_STATE...)
+    acceptance_raw = rand(acceptance_rng, UInt64)
+    acceptance_uniform = (Float64(acceptance_raw >>> 12) + 0.5) * 2.0^-52
+    accepted = acceptance_uniform <= probability
+    next_raw_word = rand(acceptance_rng, UInt64)
+
+    out = joinpath(@__DIR__, "fermions_task_c")
+    mkpath(out)
+    for direction in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(direction - 1).npy"), links[direction].U)
+        NPZ.npzwrite(joinpath(out, "force$(direction - 1).npy"), force[direction].a)
+        NPZ.npzwrite(joinpath(out, "p_initial$(direction - 1).npy"), initial_momentum[direction].a)
+        NPZ.npzwrite(joinpath(out, "p_final$(direction - 1).npy"), momentum[direction].a)
+        NPZ.npzwrite(joinpath(out, "u_proposed$(direction - 1).npy"), proposed[direction].U)
+    end
+    for (name, field) in (("xi", xi), ("phi", phi), ("x", x), ("y", y))
+        NPZ.npzwrite(joinpath(out, "$(name)_julia.npy"), copy(field.f))
+        NPZ.npzwrite(joinpath(out, "$(name)_rust.npy"), permutedims(field.f, (1, 6, 2, 3, 4, 5)))
+    end
+    open(joinpath(out, "metadata.json"), "w") do io
+        q = Char(34)
+        print(io, "{\n")
+        print(io, "  \"schema\": \"fermions_task_c.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n")
+        print(io, "  \"nc\": 3,\n  \"components\": 4,\n")
+        print(io, "  \"beta\": ", repr(FERMIONS_TASK_C_BETA), ",\n")
+        print(io, "  \"kappa\": ", repr(FERMIONS_TASK_C_KAPPA), ",\n")
+        print(io, "  \"r\": 1.0,\n  \"boundaries\": [1, 1, 1, -1],\n")
+        print(io, "  \"solver_parameters\": {\"tolerance\": ", repr(FERMIONS_TASK_C_EPS),
+            ", \"max_iterations\": ", FERMIONS_TASK_C_MAXSTEPS,
+            ", \"julia_operator_keys\": [\"Dirac_operator\", \"κ\", \"r\", \"faster version\", \"verbose_level\", \"boundarycondition\", \"method_CG\", \"eps_CG\", \"MaxCGstep\"], \"julia_solver_keywords\": [\"eps\", \"maxsteps\", \"verbose\"]},\n")
+        print(io, "  \"gaugefields_jl\": {\"package\": \"Gaugefields.jl\", \"version\": \"$VERSION\", \"commit\": \"$COMMIT\", \"clean\": true},\n")
+        print(io, "  \"latticediracoperators_jl\": {\"package\": \"LatticeDiracOperators.jl\", \"version\": \"$LATTICEDIRACOPERATORS_VERSION\", \"commit\": \"$LATTICEDIRACOPERATORS_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"source_urls\": [\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/action/WilsonFermiAction.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/test/wilsonhmc.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/WilsonFermion/WilsonFermion.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/TA_gaugefields_4D_serial.jl\"\n  ],\n")
+        print(io, "  \"source_functions\": [\"sample_pseudofermions!\", \"evaluate_FermiAction\", \"calc_UdSfdU!\", \"calc_UdSfdU_fromX!\", \"MDstep!\", \"U_update!\", \"P_update!\", \"P_update_fermion!\", \"Traceless_antihermitian_add!\"],\n")
+        print(io, "  \"entrypoint_map\": [\n")
+        print(io, "    {\"julia\": \"sample_pseudofermions!\", \"julia_source\": \"src/action/WilsonFermiAction.jl:362-377\", \"rust\": \"WilsonFermiAction::sample_pseudofermion\"},\n")
+        print(io, "    {\"julia\": \"evaluate_FermiAction\", \"julia_source\": \"src/action/WilsonFermiAction.jl:86-97\", \"rust\": \"WilsonFermiAction::evaluate\"},\n")
+        print(io, "    {\"julia\": \"calc_UdSfdU!\", \"julia_source\": \"src/action/WilsonFermiAction.jl:99-136\", \"rust\": \"WilsonFermiAction::force\"},\n")
+        print(io, "    {\"julia\": \"calc_UdSfdU_fromX!\", \"julia_source\": \"src/action/WilsonFermiAction.jl:138-234\", \"rust\": \"wilson_action.rs::force_from_x\"},\n")
+        print(io, "    {\"julia\": \"MDstep!/U_update!/P_update!/P_update_fermion!\", \"julia_source\": \"test/wilsonhmc.jl:46-146\", \"rust\": \"wilson_hmc.rs::wilson_hmc_update\"},\n")
+        print(io, "    {\"julia\": \"Traceless_antihermitian_add!\", \"julia_source\": \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/TA_gaugefields_4D_serial.jl:181-269\", \"rust\": \"Mat3::add_ta_coefficients\"}\n  ],\n")
+        print(io, "  \"layout\": {\"julia_shape\": \"[3,NX,NY,NZ,NT,4]\", \"rust_shape\": \"[3,4,NX,NY,NZ,NT]\", \"conversion\": \"permutedims(array, (1, 6, 2, 3, 4, 5))\", \"permutation\": [1, 6, 2, 3, 4, 5], \"site_order\": \"x fastest\"},\n")
+        print(io, "  \"construction\": \"explicit diagonal SU(3) links, fixed xi, phi, and coefficient-space momentum; no global RNG; the acceptance draw uses explicit Julia Xoshiro state\",\n")
+        print(io, "  \"pseudofermion_refresh\": {\"flavors\": 2, \"formula\": \"phi = D† xi\", \"complex_normal_scale\": \"1/sqrt(2) per independent real and imaginary standard normal\", \"fixture_xi\": \"fixed array; sampler parity is checked separately in Rust\"},\n")
+        print(io, "  \"force_convention\": {\"x\": \"(D†D)^-1 phi\", \"y\": \"D x\", \"raw_formula\": \"-kappa Pminus U Xplus outer Y + kappa X outer (Yplus† U† Pplus)\", \"wrapped_link_sign\": \"applied to both terms exactly once\", \"projection\": \"Gaugefields.jl Traceless_antihermitian_add!; A=(i/2) sum_a c_a lambda_a\", \"gauge_1_over_nc\": \"not applied here\"},\n")
+        print(io, "  \"momentum_update_scaling\": {\"gauge\": \"-step_size/NC\", \"fermion\": \"-step_size\"},\n")
+        print(io, "  \"action\": ", repr(action), ",\n")
+        print(io, "  \"trajectory\": {\"step_size\": ", repr(FERMIONS_TASK_C_STEP_SIZE), ", \"steps\": ", FERMIONS_TASK_C_STEPS, ", \"initial_hamiltonian\": ", repr(h_initial), ", \"proposed_hamiltonian\": ", repr(h_proposed), ", \"delta_h\": ", repr(delta_h), ", \"acceptance_probability\": ", repr(probability), ", \"acceptance_rng_state\": [", join(string.(FERMIONS_TASK_C_ACCEPTANCE_STATE), ", "), "], \"acceptance_uniform\": ", repr(acceptance_uniform), ", \"acceptance_uniform_bits\": ", reinterpret(UInt64, acceptance_uniform), ", \"accepted\": ", accepted, ", \"next_raw_word\": ", next_raw_word, "},\n")
+        print(io, "  \"comparison\": {\"field_max_abs_tolerance\": 2e-10, \"force_max_abs_tolerance\": 2e-10, \"action_tolerance\": 2e-10, \"force_finite_difference_tolerance\": 2e-7, \"finite_difference_epsilons\": [1e-3, 5e-4, 2.5e-4], \"finite_difference\": \"central U <- exp(epsilon*T_a)U; the final residual is tested with an O(epsilon^2) trend\", \"trajectory_tolerance\": 2e-10},\n")
+        print(io, "  \"files\": [\"u0.npy\", \"u1.npy\", \"u2.npy\", \"u3.npy\", \"xi_julia.npy\", \"xi_rust.npy\", \"phi_julia.npy\", \"phi_rust.npy\", \"x_julia.npy\", \"x_rust.npy\", \"y_julia.npy\", \"y_rust.npy\", \"force0.npy\", \"force1.npy\", \"force2.npy\", \"force3.npy\", \"p_initial0.npy\", \"p_initial1.npy\", \"p_initial2.npy\", \"p_initial3.npy\", \"p_final0.npy\", \"p_final1.npy\", \"p_final2.npy\", \"p_final3.npy\", \"u_proposed0.npy\", \"u_proposed1.npy\", \"u_proposed2.npy\", \"u_proposed3.npy\"],\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"fermions_task_c\", \"randomness\": \"none for fixed fields and trajectory; explicit Xoshiro only for recorded acceptance draw\"}\n")
+        print(io, "}\n")
+    end
+end
+
+if FERMIONS_TASK_C_MODE
+    generate_fermions_task_c()
     exit()
 end
 
