@@ -2,6 +2,14 @@
 
 CPU-first lattice gauge fields backed by tenferro tensors.
 
+## Attribution and license
+
+The `gaugefields` crate ports algorithms and conventions from
+[Gaugefields.jl](https://github.com/shinaoka/Gaugefields.jl), distributed under
+the MIT License. Copyright (c) 2022 Akio Tomiya and Yuki Nagai. The original
+notice is preserved in [`crates/gaugefields/LICENSE`](crates/gaugefields/LICENSE),
+and pinned source revisions are recorded with each Julia oracle.
+
 ## Compatibility policy
 
 This development line follows `tenferro-rs` `origin/main`, but every Cargo Git
