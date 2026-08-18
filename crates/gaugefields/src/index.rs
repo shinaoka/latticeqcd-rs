@@ -54,24 +54,7 @@ pub fn neighbor_site(
     site_index(c, lattice)
 }
 pub fn load_link(links: &GaugeLinks, direction: usize, site: usize) -> Result<Mat3, GaugeError> {
-    require_su3(links)?;
-    let link = links
-        .links()
-        .get(direction)
-        .ok_or(GaugeError::InvalidDirection { direction })?;
-    if site >= links.lattice().nv() {
-        return Err(GaugeError::SiteOutOfBounds {
-            site,
-            volume: links.lattice().nv(),
-        });
-    }
-    let offset = site.checked_mul(9).ok_or(GaugeError::AllocationOverflow)?;
-    Mat3::load(
-        link.typed()
-            .host_data()
-            .map_err(|e| GaugeError::Tensor(e.to_string()))?,
-        offset,
-    )
+    links.host_view()?.link(direction, site)
 }
 pub fn store_link(
     links: &mut GaugeLinks,

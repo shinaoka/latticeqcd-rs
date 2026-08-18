@@ -73,7 +73,7 @@ determinism test.
 
 ## Wilson staple and sweep order
 
-Reuse `PreparedGaugeField::force_staple`; do not duplicate periodic topology or
+Reuse `HostGaugeLinks::force_staple`; do not duplicate periodic topology or
 staple arithmetic. For link `U_mu(x)`, the heatbath matrix is
 `V = force_staple(x, mu)^dagger`, so the local action is proportional to
 `Re tr(U_mu V)`.
@@ -84,7 +84,7 @@ The sweep order is deterministic:
 2. even parity, then odd parity;
 3. within each parity, ascending compact site index (x fastest, then y, z, t).
 
-For one direction/parity, construct one `PreparedGaugeField`, compute all new
+For one direction/parity, construct one `HostGaugeLinks`, compute all new
 links from that immutable parity snapshot and the shared RNG in site order,
 drop the snapshot, then store the updates. Same-parity links are not Wilson
 staple neighbors on the required even periodic lattice. Previous directions

@@ -8,7 +8,6 @@
 //! compatibility corrections in `docs/design/su3-heatbath.md`.
 
 use crate::field::duplicate_links;
-use crate::kernel::PreparedGaugeField;
 use crate::{
     normalize_su3, require_su3, store_link, GaugeError, GaugeLinks, LatticeShape4, Mat3,
     ReproducibleRng,
@@ -159,7 +158,7 @@ where
     for direction in 0..4 {
         for parity in [true, false] {
             let updates = {
-                let prepared = PreparedGaugeField::new(links)?;
+                let prepared = links.host_view()?;
                 let mut updates = Vec::with_capacity(parity_count);
                 for site in 0..prepared.nv() {
                     if site_is_even(site, prepared.lattice()) != parity {
@@ -213,7 +212,7 @@ fn validate_heatbath_inputs(links: &GaugeLinks, params: HeatbathParams) -> Resul
         }
     }
     checked_heatbath_sizes(links.lattice())?;
-    PreparedGaugeField::new(links)?;
+    links.host_view()?;
     Ok(())
 }
 

@@ -54,6 +54,22 @@ fn host_only_typed_constructors_return_structured_placement_errors() {
 }
 
 #[test]
+fn zero_ta_field_has_checked_site_coefficient_access() {
+    let lattice = LatticeShape4::new([2, 1, 1, 1]).unwrap();
+    let mut field = TaGaugeField::zeros(lattice).unwrap();
+    field.add_site_coefficients(1, 1, [0.25; 8]).unwrap();
+    assert_eq!(field.site_coefficients(1, 1).unwrap(), [0.25; 8]);
+    assert!(matches!(
+        field.add_site_coefficients(4, 0, [0.0; 8]),
+        Err(gaugefields::GaugeError::InvalidDirection { direction: 4 })
+    ));
+    assert!(matches!(
+        field.site_coefficients(0, 2),
+        Err(gaugefields::GaugeError::SiteOutOfBounds { site: 2, volume: 2 })
+    ));
+}
+
+#[test]
 fn typed_storage_validates_shapes_and_has_compact_debug() {
     let lattice = LatticeShape4::new([2, 1, 1, 1]).unwrap();
     let link = GaugeLinkTensor::from_typed(

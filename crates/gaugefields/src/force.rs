@@ -1,10 +1,14 @@
 use crate::{
-    kernel::{validate_beta, PreparedGaugeField},
+    kernel::{validate_beta, HostGaugeLinks},
     GaugeError, GaugeLinkTensor, GaugeLinks, Mat3, TaGaugeField,
 };
 use num_complex::Complex64 as C;
 use tenferro_tensor::TypedTensor;
-fn checked_count(items_per_site: usize, nv: usize, item_size: usize) -> Result<usize, GaugeError> {
+pub(crate) fn checked_count(
+    items_per_site: usize,
+    nv: usize,
+    item_size: usize,
+) -> Result<usize, GaugeError> {
     let count = items_per_site
         .checked_mul(nv)
         .ok_or(GaugeError::AllocationOverflow)?;
@@ -18,7 +22,7 @@ fn checked_count(items_per_site: usize, nv: usize, item_size: usize) -> Result<u
 }
 fn complex_output(
     u: &GaugeLinks,
-    prepared: &PreparedGaugeField<'_>,
+    prepared: &HostGaugeLinks<'_>,
     beta: f64,
     gradient: bool,
     mu: usize,
@@ -46,7 +50,7 @@ fn complex_outputs(
     gradient: bool,
 ) -> Result<[GaugeLinkTensor; 4], GaugeError> {
     validate_beta(beta)?;
-    let prepared = PreparedGaugeField::new(u)?;
+    let prepared = u.host_view()?;
     Ok([
         complex_output(u, &prepared, beta, gradient, 0)?,
         complex_output(u, &prepared, beta, gradient, 1)?,
@@ -65,7 +69,7 @@ pub fn action_gradient(u: &GaugeLinks, beta: f64) -> Result<[GaugeLinkTensor; 4]
 /// TA coefficients of `U_mu * dsdu_mu`, without integrator or extra `1/NC` factors.
 pub fn gauge_force(u: &GaugeLinks, beta: f64) -> Result<TaGaugeField, GaugeError> {
     validate_beta(beta)?;
-    let prepared = PreparedGaugeField::new(u)?;
+    let prepared = u.host_view()?;
     let count = checked_count(8, u.lattice().nv(), std::mem::size_of::<f64>())?;
     let [nx, ny, nz, nt] = u.lattice().extents();
     let mut tensors = Vec::with_capacity(4);

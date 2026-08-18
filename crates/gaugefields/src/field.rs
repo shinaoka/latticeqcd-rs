@@ -172,6 +172,126 @@ impl TaGaugeField {
         }
         Ok(Self { tensors, lattice })
     }
+
+    /// Allocates a zero host TA field with eight coefficients per link site.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed allocation or tensor error if the lattice cannot be
+    /// represented by the validated compact field layout.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gaugefields::{LatticeShape4, TaGaugeField};
+    ///
+    /// let field = TaGaugeField::zeros(LatticeShape4::new([1, 1, 1, 1])?)?;
+    /// assert_eq!(field.site_coefficients(0, 0)?, [0.0; 8]);
+    /// # Ok::<(), gaugefields::GaugeError>(())
+    /// ```
+    pub fn zeros(lattice: LatticeShape4) -> Result<Self, GaugeError> {
+        let count = 8usize
+            .checked_mul(lattice.nv())
+            .ok_or(GaugeError::AllocationOverflow)?;
+        let bytes = count
+            .checked_mul(std::mem::size_of::<f64>())
+            .ok_or(GaugeError::AllocationOverflow)?;
+        if bytes > isize::MAX as usize {
+            return Err(GaugeError::AllocationOverflow);
+        }
+        let [nx, ny, nz, nt] = lattice.extents();
+        let make = || {
+            TypedTensor::from_vec_col_major(vec![8, nx, ny, nz, nt], vec![0.0; count])
+                .map_err(|error| GaugeError::Tensor(error.to_string()))
+        };
+        Self::new([make()?, make()?, make()?, make()?], lattice)
+    }
+
+    /// Adds eight TA coefficients at one direction/site without exposing storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for an invalid direction, site, or placement.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gaugefields::{LatticeShape4, TaGaugeField};
+    ///
+    /// let mut field = TaGaugeField::zeros(LatticeShape4::new([1, 1, 1, 1])?)?;
+    /// field.add_site_coefficients(2, 0, [1.0; 8])?;
+    /// assert_eq!(field.site_coefficients(2, 0)?, [1.0; 8]);
+    /// # Ok::<(), gaugefields::GaugeError>(())
+    /// ```
+    pub fn add_site_coefficients(
+        &mut self,
+        direction: usize,
+        site: usize,
+        coefficients: [f64; 8],
+    ) -> Result<(), GaugeError> {
+        let tensor = self
+            .tensors
+            .get_mut(direction)
+            .ok_or(GaugeError::InvalidDirection { direction })?;
+        if site >= self.lattice.nv() {
+            return Err(GaugeError::SiteOutOfBounds {
+                site,
+                volume: self.lattice.nv(),
+            });
+        }
+        let offset = site.checked_mul(8).ok_or(GaugeError::AllocationOverflow)?;
+        let end = offset
+            .checked_add(8)
+            .ok_or(GaugeError::AllocationOverflow)?;
+        let values = tensor.host_data_mut().map_err(|source| {
+            GaugeError::placement("TaGaugeField::add_site_coefficients", source)
+        })?;
+        let len = values.len();
+        let target = values
+            .get_mut(offset..end)
+            .ok_or(GaugeError::MatrixBlockOutOfBounds { offset, len })?;
+        for (out, value) in target.iter_mut().zip(coefficients) {
+            *out += value;
+        }
+        Ok(())
+    }
+
+    /// Returns the eight TA coefficients at one direction/site.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error for an invalid direction, site, or placement.
+    pub fn site_coefficients(&self, direction: usize, site: usize) -> Result<[f64; 8], GaugeError> {
+        let tensor = self
+            .tensors
+            .get(direction)
+            .ok_or(GaugeError::InvalidDirection { direction })?;
+        if site >= self.lattice.nv() {
+            return Err(GaugeError::SiteOutOfBounds {
+                site,
+                volume: self.lattice.nv(),
+            });
+        }
+        let offset = site.checked_mul(8).ok_or(GaugeError::AllocationOverflow)?;
+        let end = offset
+            .checked_add(8)
+            .ok_or(GaugeError::AllocationOverflow)?;
+        let values = tensor
+            .host_data()
+            .map_err(|source| GaugeError::placement("TaGaugeField::site_coefficients", source))?;
+        values
+            .get(offset..end)
+            .ok_or(GaugeError::MatrixBlockOutOfBounds {
+                offset,
+                len: values.len(),
+            })?
+            .try_into()
+            .map_err(|_| GaugeError::MatrixBlockOutOfBounds {
+                offset,
+                len: values.len(),
+            })
+    }
+
     pub fn tensors(&self) -> &[TypedTensor<f64>; 4] {
         &self.tensors
     }
@@ -207,6 +327,53 @@ impl GaugeLinks {
             boundary: Boundary::Periodic,
         })
     }
+
+    /// Validates and borrows this field for read-only host kernels.
+    ///
+    /// The view retains no storage copy and performs the tensor, placement, and
+    /// lattice validation once.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when the field is not host-resident or is not an
+    /// SU(3) field with the validated compact layout.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gaugefields::{cold_su3, LatticeShape4};
+    ///
+    /// let links = cold_su3(LatticeShape4::new([1, 1, 1, 1])?)?;
+    /// let view = links.host_view()?;
+    /// assert_eq!(view.lattice().nv(), 1);
+    /// assert_eq!(view.link(0, 0)?.trace().re, 3.0);
+    /// # Ok::<(), gaugefields::GaugeError>(())
+    /// ```
+    pub fn host_view(&self) -> Result<crate::HostGaugeLinks<'_>, GaugeError> {
+        crate::kernel::HostGaugeLinks::new(self)
+    }
+
+    /// Fallibly duplicates all four link tensors.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed allocation, tensor, or placement error without changing
+    /// this field.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gaugefields::{cold_su3, LatticeShape4};
+    ///
+    /// let links = cold_su3(LatticeShape4::new([1, 1, 1, 1])?)?;
+    /// let copy = links.try_clone()?;
+    /// assert_eq!(copy.lattice(), links.lattice());
+    /// # Ok::<(), gaugefields::GaugeError>(())
+    /// ```
+    pub fn try_clone(&self) -> Result<Self, GaugeError> {
+        duplicate_links(self)
+    }
+
     pub fn links(&self) -> &[GaugeLinkTensor; 4] {
         &self.links
     }
@@ -238,20 +405,16 @@ pub(crate) fn duplicate_links(links: &GaugeLinks) -> Result<GaugeLinks, GaugeErr
         return Err(GaugeError::AllocationOverflow);
     }
     let lattice = links.lattice();
-    let copies =
-        (0..4)
-            .map(|mu| {
-                let tensor = links.links()[mu].typed().duplicate().map_err(|source| {
-                    GaugeError::Evolution {
-                        operation: "GaugeLinks duplicate",
-                        source,
-                    }
-                })?;
-                GaugeLinkTensor::from_typed(tensor, lattice)
-            })
-            .collect::<Result<Vec<_>, GaugeError>>()?
-            .try_into()
-            .map_err(|_| GaugeError::Tensor("GaugeLinks require four tensors".into()))?;
+    let copies = (0..4)
+        .map(|mu| {
+            let tensor = links.links()[mu].typed().duplicate().map_err(|source| {
+                GaugeError::Tensor(format!("GaugeLinks duplicate failed: {source}"))
+            })?;
+            GaugeLinkTensor::from_typed(tensor, lattice)
+        })
+        .collect::<Result<Vec<_>, GaugeError>>()?
+        .try_into()
+        .map_err(|_| GaugeError::Tensor("GaugeLinks require four tensors".into()))?;
     GaugeLinks::new(copies)
 }
 

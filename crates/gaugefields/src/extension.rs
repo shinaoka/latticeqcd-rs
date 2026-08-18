@@ -1,5 +1,5 @@
 use crate::{
-    kernel::{validate_beta, PreparedGaugeField},
+    kernel::{validate_beta, HostGaugeLinks},
     GaugeError, Mat3,
 };
 use num_complex::Complex64;
@@ -49,7 +49,7 @@ fn checked_output_count(nv: usize) -> tenferro_tensor::Result<usize> {
 }
 
 fn gradient_tensors(
-    prepared: &PreparedGaugeField<'_>,
+    prepared: &HostGaugeLinks<'_>,
     beta: f64,
     seed: f64,
 ) -> tenferro_tensor::Result<Vec<Tensor>> {
@@ -335,8 +335,8 @@ fn execute_payload(
             let links: [&Tensor; 4] = inputs
                 .try_into()
                 .map_err(|_| invalid(family_id, "expected exactly four link tensors"))?;
-            let prepared = PreparedGaugeField::from_tensors(links)
-                .map_err(|error| abi_error(family_id, error))?;
+            let prepared =
+                HostGaugeLinks::from_tensors(links).map_err(|error| abi_error(family_id, error))?;
             let value = -f64::from_bits(action.beta) / 3.0
                 * prepared
                     .plaquette_sum()
@@ -356,8 +356,8 @@ fn execute_payload(
             let links: [&Tensor; 4] = inputs[..4]
                 .try_into()
                 .map_err(|_| invalid(family_id, "expected four links"))?;
-            let prepared = PreparedGaugeField::from_tensors(links)
-                .map_err(|error| abi_error(family_id, error))?;
+            let prepared =
+                HostGaugeLinks::from_tensors(links).map_err(|error| abi_error(family_id, error))?;
             let mut value = 0.0;
             for (index, &mu) in jvp.active_dirs.iter().enumerate() {
                 let tangent = match inputs[4 + index] {
@@ -416,8 +416,8 @@ fn execute_payload(
                     .ok_or_else(|| invalid(family_id, "seed must be finite scalar F64"))?,
                 _ => return Err(invalid(family_id, "seed must be scalar F64")),
             };
-            let prepared = PreparedGaugeField::from_tensors(links)
-                .map_err(|error| abi_error(family_id, error))?;
+            let prepared =
+                HostGaugeLinks::from_tensors(links).map_err(|error| abi_error(family_id, error))?;
             gradient_tensors(&prepared, f64::from_bits(force.beta), seed)
         }
         _ => Err(unsupported_payload(family_id)),

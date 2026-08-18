@@ -17,6 +17,7 @@ thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 npyz.workspace = true
+quick-xml.workspace = true
 tenferro-tensor.workspace = true
 tenferro-runtime.workspace = true
 tenferro-cpu.workspace = true

@@ -8,7 +8,26 @@ The `gaugefields` crate ports algorithms and conventions from
 [Gaugefields.jl](https://github.com/shinaoka/Gaugefields.jl), distributed under
 the MIT License. Copyright (c) 2022 Akio Tomiya and Yuki Nagai. The original
 notice is preserved in [`crates/gaugefields/LICENSE`](crates/gaugefields/LICENSE),
-and pinned source revisions are recorded with each Julia oracle.
+and pinned source revisions are recorded with each Julia oracle. The `wilsonloop`
+crate follows the signed-path and plaquette/rectangle conventions of
+[Wilsonloop.jl](https://github.com/akio-tomiya/Wilsonloop.jl), distributed under
+the MIT License; its applicable notice is preserved in
+[`crates/wilsonloop/LICENSE`](crates/wilsonloop/LICENSE). The `measurements`
+crate follows the Polyakov and clover conventions of
+[QCDMeasurements.jl](https://github.com/akio-tomiya/QCDMeasurements.jl); its notice
+is preserved in [`crates/measurements/LICENSE`](crates/measurements/LICENSE).
+
+## Signed Wilson paths and loop actions
+
+The `wilsonloop` crate provides periodic signed unit paths (`-4..=-1` and
+`1..=4`), closed plaquette/1x2 rectangle terms, `LoopAction` values with
+precompiled occurrence metadata, and host-side action values and forces. A
+term means `c * sum_x Re tr(W)`; matching a Julia real coefficient `f` that
+adds both `W` and `W†` uses `c = 2f`. Because Julia's `calc_dSdU` is the
+holomorphic derivative, each force occurrence uses `c/2 = f`; the corresponding
+left variation obeys `dS/dt = -F·v`. The pinned multi-term oracle and all
+`4 * 16 * 8` force components are checked in
+[`fixtures/wilsonloop_task_b`](fixtures/wilsonloop_task_b).
 
 ## Compatibility policy
 
@@ -21,6 +40,30 @@ full feature matrix is rebuilt, and fixture/layout tests are rerun.
 Until the API stabilizes, compatibility is clean-break rather than emulation:
 gaugefields-rs targets its recorded tenferro revision and does not carry shims
 for older or newer tenferro APIs.
+
+## Host access and ILDG
+
+`GaugeLinks::host_view()` provides fallible, read-only host access without
+exposing tenferro's storage layout. `read_ildg` and `write_ildg` exchange one
+4D SU(3), Float64 configuration in a minimal ILDG 1.1 LIME message:
+
+```rust
+use gaugefields::{read_ildg, write_ildg};
+
+# fn copy_configuration() -> Result<(), gaugefields::GaugeError> {
+let links = read_ildg("input.ildg")?;
+write_ildg("output.ildg", &links)?;
+# Ok(())
+# }
+```
+
+The I/O boundary is host-only and rejects malformed framing or XML, unsupported
+metadata, wrong payload lengths, non-finite components, and trailing data with
+typed errors. It uses big-endian IEEE Float64 values in
+`t,z,y,x,direction,row,column,real/imaginary` order. Float32, multiple
+configurations, and SciDAC checksum verification are intentionally outside the
+minimal API. Run the checked self-contained example with
+`cargo run -p gaugefields --example ildg_roundtrip`.
 
 ## Reproducible random streams
 
@@ -131,6 +174,65 @@ slots `0..3` identify the four directions, and all outputs are validated before
 the links are replaced. Cache entry counts are provider-dependent: the pinned
 cpu-faer unconjugated strided path reports zero retained analysis entries even
 though it uses the same cached session and stable slots.
+
+A synchronous isotropic stout step reuses that caller-owned context:
+
+```rust
+use gaugefields::{stout_step, CpuEvolutionContext};
+use tenferro_cpu::CpuBackend;
+
+# fn smear(links: &gaugefields::GaugeLinks) -> Result<gaugefields::GaugeLinks, gaugefields::GaugeError> {
+let mut context = CpuEvolutionContext::new(CpuBackend::new());
+let smeared = stout_step(&mut context, links, 0.12)?;
+# Ok(smeared)
+# }
+```
+
+It uses `C_mu = rho *` the unweighted positive six-term plaquette staple,
+then `Omega = C_mu * U_mu†`, `Q = TA(Omega)`, and
+`U'_mu = exp(Q) * U_mu`. Finite negative `rho` values are valid; every link
+uses the unchanged input snapshot and failures leave the input untouched.
+
+## Polyakov and clover measurements
+
+The `measurements` crate exposes fallible host-only
+`polyakov_loop`, `clover_topological_charge`, and fixed-step third-order
+Runge--Kutta `gradient_flow` operations. Polyakov uses the fourth (temporal)
+direction and is normalized by spatial volume, not by `NC`. The clover charge
+uses QCDMeasurements.jl's four-loop clover, ordinary
+`epsilon(0,1,2,3)=+1`, and `/4^2` normalization. The D1 scalar and beta=5.7
+statistical oracles are in
+[`fixtures/measurements_task_d1`](fixtures/measurements_task_d1); the D2 flow
+oracle is in [`fixtures/gradientflow_task_d2`](fixtures/gradientflow_task_d2).
+
+To regenerate the D1/D2 oracles, activate the clean external Julia reference
+project and provide the exact Gaugefields.jl and Wilsonloop.jl checkouts:
+
+```bash
+export LATTICEQCD_JULIA_PROJECT=/tmp/latticeqcd-phase2-julia-env
+export GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl
+export WILSONLOOP_JL_DIR=/path/to/Wilsonloop.jl
+export JULIA_NUM_THREADS=1
+julia --startup-file=no --project="$LATTICEQCD_JULIA_PROJECT" \
+  fixtures/generate.jl gradientflow_task_d2
+```
+
+D1 and the default generator additionally require
+`QCDMEASUREMENTS_JL_DIR`:
+
+```bash
+export QCDMEASUREMENTS_JL_DIR=/path/to/QCDMeasurements.jl
+julia --startup-file=no --project="$LATTICEQCD_JULIA_PROJECT" \
+  fixtures/generate.jl measurements_task_d1
+```
+
+The reference project must directly develop the three pinned checkouts and add
+`NPZ`; it is external and is not committed to this repository. With no mode
+argument, the generator runs each fixture generator once, including both D1
+and D2. Older modes that do not use these measurements only require
+`GAUGEFIELDS_JL_DIR` (and Wilsonloop.jl where their metadata needs it). Run the
+Rust known-value example with
+`cargo run -p measurements --example quenched_measurements`.
 
 ## Quenched SU(3) heatbath
 
