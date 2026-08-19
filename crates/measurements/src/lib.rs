@@ -8,6 +8,17 @@
 //! `9e04c37bbd68712cf7a749ae5aff10eb6aae4566`, with Wilsonloop.jl's periodic
 //! signed-link convention. The implementation reuses `HostGaugeLinks` and
 //! `Mat3`; it does not copy tensor storage or introduce a second path engine.
+//!
+//! With the optional `fermions` feature, [`fermions::pion_correlator`] solves
+//! every color-outer, component-inner point source and accumulates the corrected
+//! full sink Frobenius contraction. [`fermions::stochastic_chiral_condensate`]
+//! consumes a caller-owned [`gaugefields::ReproducibleRng`] using canonical Z4
+//! phases (`word & 3` maps to `1, i, -1, -i`). These are intentionally not the
+//! pinned high-level QCDMeasurements.jl pion reconstruction (Issue #29) or its
+//! `pi/4` Z4 routine (Issue #27). The Phase 4 ensemble evidence also avoids the
+//! pinned LatticeQCD.jl parser/scheduler issue candidates (Issue #30) by owning
+//! its fixed schedule in the Julia generator and Rust integration test. The
+//! pinned revisions and exact normalization are recorded in the fixture metadata.
 
 #[cfg(feature = "fermions")]
 pub mod fermions;

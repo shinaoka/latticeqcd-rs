@@ -39,7 +39,7 @@ No upstream submission is authorized or performed.
 |---|---|---|---|
 | A: fermion measurements | round 1 `Correct-to-merge` | full diff `Correct-to-merge` | two delta rounds `Correct-to-merge` |
 | B: `latticeqcd` frontend | round 2 `Correct-to-merge` | full diff `Correct-to-merge` | delta `Correct-to-merge` |
-| C: integrated evidence/docs | round 2 `Correct-to-merge` | pending | pending |
+| C: integrated evidence/docs | round 2 `Correct-to-merge` | round 1 `Not correct-to-merge`; fixed | two delta rounds, final `Correct-to-merge` |
 | Integrated diff | n/a | pending | pending |
 
 Round 1 reviewer findings were incorporated before implementation: exact sea
@@ -109,5 +109,71 @@ workspace check/test/all-features test/workspace doctests/docs, both existing
 traced/fermion examples, exact tenferro-pin/stale-symbol checks, and
 `git diff --check`. The Task B full-diff review returned `Correct-to-merge`.
 Five Minor strictness/coverage/cleanup/documentation findings were fixed, and
-the delta review returned `Correct-to-merge`. No commit or push was made;
-Task C and integrated review remain pending.
+the delta review returned `Correct-to-merge`. No commit or push was made.
+
+## Task C completion evidence
+
+Task C adds `fixtures/generate.jl` mode
+`fermion_measurements_phase4_ensemble`, the metadata-only fixture tree
+`fixtures/fermion_measurements_phase4_ensemble`, and the independent
+`crates/measurements/tests/phase4_ensemble.rs` test. The generator uses clean
+Julia 1.12.5 plus the pinned Gaugefields.jl
+`9e5719970770f4497405a856315c90bef7f74449`, LatticeDiracOperators.jl
+`bdef628184597815ba3e0cddf2536df767e78a02`, Wilsonloop.jl
+`e1a617fdedb19b785f89bdeb13c30e53b20743a7`, and QCDMeasurements.jl
+`9e04c37bbd68712cf7a749ae5aff10eb6aae4566`. It records the fixed Phase 3
+RHMC tables and `[0.0004,64]` interval, all 20 Julia trajectory records, all
+16 measurements, two explicit canonical-Z4 source code arrays per measurement,
+four block summaries, solver/layout/normalization/source provenance, and the
+separate Rust update/source stream states. No Rust results or configurations
+are written by Julia.
+
+The exact predeclared run is beta `5.7`, mass `0.5`, `Nf=2`, lattice
+`[2,2,2,2]`, step size `0.01`, two MD steps, four thermalization trajectories,
+and 16 interval-one measurements in four blocks of four. Two clean generator
+runs produced the identical complete-tree hash
+`d3b0e00fafe54d590b23b3afad6e75214fefaf81a68f5c8c28e13da008c7f657`; the
+single metadata payload hash is
+`b7c5c3ac4d1042de24dcbbdc2bad591fff95e89b48ba304ebe06e9009db8c9c7`.
+
+The focused Rust test passed 2 tests, including the explicit zero-combined-SE
+case. It independently accepted all 4 thermalization and 16 measured updates.
+The recorded Julia/Rust block means were:
+
+```text
+pion Julia [[0.49098124162968626, 1.9156314138884456],
+           [0.4987236819746711, 1.9183354002187256],
+           [0.504100784573672, 1.920612344936982],
+           [0.5141885944254221, 1.9198501820310567]]
+pion Rust  [[0.4895505014032875, 1.9147597875158442],
+           [0.4981772675478961, 1.9161905005944495],
+           [0.5000324075646916, 1.9160401161006275],
+           [0.5102573651938351, 1.9154787445422932]]
+chiral Julia [0.6034035045821012, 0.6015137365891218,
+              0.6046312233300931, 0.6110815307064406]
+chiral Rust  [0.5996102079154657, 0.6065291411402107,
+              0.609136369505594, 0.6060743361103856]
+delta-H Julia [-1.723232045449663e-4, -1.1397239357791022e-4,
+              -1.2471150934345587e-4, -2.1943733928964093e-4]
+delta-H Rust  [-1.960644032124037e-4, -1.2465574448583538e-4,
+              -1.310893148840364e-4, -1.1461058957706882e-4]
+```
+
+Normalized differences (absolute mean difference divided by the combined
+standard error of the four block means) were `0.3856782` for pion `t=0`,
+`2.609377` for pion `t=1`, and `0.06207383` for the chiral scalar. All are
+below the required six-SE gate. With only four consecutive blocks and short
+MD separation, these standard errors are an intentionally noisy,
+autocorrelated consistency estimate rather than a calibrated physics-precision
+claim. The test prints every Rust per-trajectory acceptance/delta-H and measured
+pion/chiral value, plus the Julia/Rust blocks and acceptance summaries. Rust
+stream states in the metadata are predeclared constants, not Julia-generated
+results or configurations. The generator never calls the buggy high-level Julia pion
+reconstruction or `Z4_distribution_fermi!`; Issues #27, #29, and #30 are
+recorded with the pinned revisions and Rust-side decisions.
+
+Task C full-diff review found one Important stale hash/docs mismatch and two
+Minor statistical/metadata clarity issues. All were fixed; after metadata
+regeneration, a remaining formatting anomaly was fixed and regenerated again.
+Both delta rounds completed, with the final verdict `Correct-to-merge`.
+Integrated review remains pending; no push was made.
