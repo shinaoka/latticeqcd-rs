@@ -68,12 +68,7 @@ impl FermionField {
     ) -> Result<Self, DiracError> {
         let shape = validated_shape(lattice, components)?;
         let element_count = checked_size(lattice, components)?;
-        let bytes = element_count
-            .checked_mul(std::mem::size_of::<Complex64>())
-            .ok_or(DiracError::AllocationOverflow)?;
-        if bytes > isize::MAX as usize {
-            return Err(DiracError::AllocationOverflow);
-        }
+        checked_allocation_bytes(element_count)?;
         if tensor.rank() != RANK {
             return Err(DiracError::Rank {
                 expected: RANK,
@@ -163,6 +158,46 @@ impl FermionField {
         Self::from_typed(tensor, lattice, components)
     }
 
+    /// Construct a unit point source in compact `[color, component, x, y, z, t]`
+    /// storage order.
+    ///
+    /// `site` is the x-fast linear site index. The source has unit value at the
+    /// requested color, component, and site and is zero everywhere else.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed bounds, component-count, or allocation-size error. All
+    /// indices and the complete allocation size are checked before the unit
+    /// basis value is constructed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dirac_operators::FermionField;
+    /// use gaugefields::LatticeShape4;
+    /// use num_complex::Complex64;
+    ///
+    /// let lattice = LatticeShape4::new([2, 1, 1, 1])?;
+    /// let source = FermionField::point_source(lattice, 1, 2, 0, 1)?;
+    /// assert_eq!(source.component(2, 0, 1)?, Complex64::new(1.0, 0.0));
+    /// assert_eq!(source.component(0, 0, 0)?, Complex64::default());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn point_source(
+        lattice: LatticeShape4,
+        components: usize,
+        color: usize,
+        component: usize,
+        site: usize,
+    ) -> Result<Self, DiracError> {
+        let element_count = checked_size(lattice, components)?;
+        checked_allocation_bytes(element_count)?;
+        let offset = checked_component_offset(components, lattice, color, component, site)?;
+        let mut values = vec![Complex64::default(); element_count];
+        *values.get_mut(offset).ok_or(DiracError::StorageInvariant)? = Complex64::new(1.0, 0.0);
+        Self::from_vec_col_major(lattice, components, values)
+    }
+
     /// Construct a zero-filled host field after checking its allocation size.
     ///
     /// # Errors
@@ -181,12 +216,7 @@ impl FermionField {
     /// ```
     pub fn zeros(lattice: LatticeShape4, components: usize) -> Result<Self, DiracError> {
         let element_count = checked_size(lattice, components)?;
-        let bytes = element_count
-            .checked_mul(std::mem::size_of::<Complex64>())
-            .ok_or(DiracError::AllocationOverflow)?;
-        if bytes > isize::MAX as usize {
-            return Err(DiracError::AllocationOverflow);
-        }
+        checked_allocation_bytes(element_count)?;
         Self::from_vec_col_major(
             lattice,
             components,
@@ -496,19 +526,7 @@ impl FermionField {
                 volume: self.lattice.nv(),
             });
         }
-        let component_site = component
-            .checked_add(
-                self.components
-                    .checked_mul(site)
-                    .ok_or(DiracError::AllocationOverflow)?,
-            )
-            .ok_or(DiracError::AllocationOverflow)?;
-        color
-            .checked_add(
-                NC.checked_mul(component_site)
-                    .ok_or(DiracError::AllocationOverflow)?,
-            )
-            .ok_or(DiracError::AllocationOverflow)
+        checked_component_offset(self.components, self.lattice, color, component, site)
     }
 }
 
@@ -534,6 +552,53 @@ fn checked_size(lattice: LatticeShape4, components: usize) -> Result<usize, Dira
     validate_components(components)?;
     NC.checked_mul(components)
         .and_then(|value| value.checked_mul(lattice.nv()))
+        .ok_or(DiracError::AllocationOverflow)
+}
+
+fn checked_allocation_bytes(element_count: usize) -> Result<(), DiracError> {
+    let bytes = element_count
+        .checked_mul(std::mem::size_of::<Complex64>())
+        .ok_or(DiracError::AllocationOverflow)?;
+    if bytes > isize::MAX as usize {
+        return Err(DiracError::AllocationOverflow);
+    }
+    Ok(())
+}
+
+fn checked_component_offset(
+    components: usize,
+    lattice: LatticeShape4,
+    color: usize,
+    component: usize,
+    site: usize,
+) -> Result<usize, DiracError> {
+    if color >= NC {
+        return Err(DiracError::ColorOutOfBounds { color });
+    }
+    if component >= components {
+        return Err(DiracError::ComponentOutOfBounds {
+            component,
+            components,
+        });
+    }
+    if site >= lattice.nv() {
+        return Err(DiracError::SiteOutOfBounds {
+            site,
+            volume: lattice.nv(),
+        });
+    }
+    let component_site = component
+        .checked_add(
+            components
+                .checked_mul(site)
+                .ok_or(DiracError::AllocationOverflow)?,
+        )
+        .ok_or(DiracError::AllocationOverflow)?;
+    color
+        .checked_add(
+            NC.checked_mul(component_site)
+                .ok_or(DiracError::AllocationOverflow)?,
+        )
         .ok_or(DiracError::AllocationOverflow)
 }
 

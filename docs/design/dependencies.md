@@ -37,6 +37,18 @@ nor ROCm is implemented or declared in this manifest today; adding one requires
 an explicit placement-aware design rather than an umbrella feature or implicit
 transfer.
 
+Phase 4 adds the leaf `latticeqcd` workspace crate over `gaugefields`,
+`wilsonloop`, `dirac-operators`, and `measurements`. Fermion measurements are an
+optional `measurements/fermions` feature backed by optional `dirac-operators`
+and `rand` dependencies; the default gluonic-only crate remains unchanged and
+the dependency graph stays acyclic.
+
+The only new external package is `toml` 0.8, used with the existing `serde` for
+the strict parameter-file boundary. The frontend deliberately uses the standard
+library for argument parsing, paths, and no-clobber publication; it adds no CLI,
+temporary-file, async, logging, or serialization framework.
+
 `cargo tree --duplicates` reports only dependency-family duplicates pulled by
-faer, npyz, and strided support. They are unrelated to tenferro pinning and
-must not be removed by an application-layer refactor.
+faer, npyz, strided support, and the resolved TOML parser family. They are
+unrelated to tenferro pinning and must not be removed by an application-layer
+refactor.

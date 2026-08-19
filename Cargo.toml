@@ -4,6 +4,7 @@ members = [
     "crates/wilsonloop",
     "crates/measurements",
     "crates/dirac-operators",
+    "crates/latticeqcd",
 ]
 resolver = "2"
 
@@ -19,6 +20,7 @@ rand_xoshiro = "0.6"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 npyz = { version = "0.8", features = ["complex"] }
 quick-xml = "0.37"
 tenferro-tensor = { git = "https://github.com/tensor4all/tenferro-rs.git", rev = "c942129974b544225ed963414d7be1300980f901", default-features = false }

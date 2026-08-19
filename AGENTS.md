@@ -17,6 +17,11 @@ AD-rule ownership explicit.
 Use CodeGraph first: run `codegraph init` and refresh its index before source
 exploration, then trace changed symbols and callers. Do not commit `.codegraph/`.
 
+When a referenced upstream implementation appears buggy, record the candidate
+as an issue in this Rust repository with the pinned upstream revision, source
+location, reproducer or direct evidence, and the Rust-side decision. Do not file
+or patch upstream without the user's separate explicit approval.
+
 Before completion, run the focused tests and the local gate:
 
 ```bash

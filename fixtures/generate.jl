@@ -2,17 +2,19 @@ import Pkg
 import Random
 
 const FERMIONS_TASK_A_MODE = ARGS == ["fermions_task_a"]
+const FERMION_MEASUREMENTS_MODE = ARGS == ["fermion_measurements_phase4"]
 const FERMIONS_TASK_B_MODE = ARGS == ["fermions_task_b"]
 const FERMIONS_TASK_C_MODE = ARGS == ["fermions_task_c"]
 const FERMIONS_TASK_D_MODE = ARGS == ["fermions_task_d"]
 const FERMIONS_TASK_E_MODE = ARGS == ["fermions_task_e"]
 const FERMIONS_TASK_E_ENSEMBLE_MODE = ARGS == ["fermions_task_e_ensemble"]
-const FERMIONS_MODE = FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE || FERMIONS_TASK_C_MODE || FERMIONS_TASK_D_MODE || FERMIONS_TASK_E_MODE || FERMIONS_TASK_E_ENSEMBLE_MODE
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE = ARGS == ["fermion_measurements_phase4_ensemble"]
+const FERMIONS_MODE = FERMIONS_TASK_A_MODE || FERMION_MEASUREMENTS_MODE || FERMIONS_TASK_B_MODE || FERMIONS_TASK_C_MODE || FERMIONS_TASK_D_MODE || FERMIONS_TASK_E_MODE || FERMIONS_TASK_E_ENSEMBLE_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE
 const D1_MODE = isempty(ARGS) || ARGS == ["measurements_task_d1"]
 const D2_MODE = isempty(ARGS) || ARGS == ["gradientflow_task_d2"]
 const REFERENCE_MODE = D1_MODE || D2_MODE
-if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"] || FERMIONS_TASK_A_MODE || FERMIONS_TASK_B_MODE || FERMIONS_TASK_C_MODE || FERMIONS_TASK_D_MODE || FERMIONS_TASK_E_MODE || FERMIONS_TASK_E_ENSEMBLE_MODE)
-    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2|fermions_task_a|fermions_task_b|fermions_task_c|fermions_task_d|fermions_task_e|fermions_task_e_ensemble]")
+if !(isempty(ARGS) || ARGS == ["reproducible_rng"] || ARGS == ["hmc_trajectory"] || ARGS == ["heatbath_statistics"] || ARGS == ["ildg"] || ARGS == ["wilsonloop_task_b"] || ARGS == ["stout_task_c"] || ARGS == ["measurements_task_d1"] || ARGS == ["gradientflow_task_d2"] || FERMIONS_TASK_A_MODE || FERMION_MEASUREMENTS_MODE || FERMIONS_TASK_B_MODE || FERMIONS_TASK_C_MODE || FERMIONS_TASK_D_MODE || FERMIONS_TASK_E_MODE || FERMIONS_TASK_E_ENSEMBLE_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE)
+    error("usage: julia --startup-file=no fixtures/generate.jl [reproducible_rng|hmc_trajectory|heatbath_statistics|ildg|wilsonloop_task_b|stout_task_c|measurements_task_d1|gradientflow_task_d2|fermions_task_a|fermion_measurements_phase4|fermions_task_b|fermions_task_c|fermions_task_d|fermions_task_e|fermions_task_e_ensemble|fermion_measurements_phase4_ensemble]")
 end
 
 hex_word(value::UInt64) = "0x" * lpad(string(value, base=16), 16, '0')
@@ -92,13 +94,13 @@ const WILSONLOOP_CHECKOUT = get(
 )
 isdir(WILSONLOOP_CHECKOUT) || error("expected Wilsonloop.jl checkout at $WILSONLOOP_CHECKOUT")
 const QCDMEASUREMENTS_CHECKOUT = get(ENV, "QCDMEASUREMENTS_JL_DIR", nothing)
-if REFERENCE_MODE
+if REFERENCE_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE
     isempty(get(ENV, "LATTICEQCD_JULIA_PROJECT", "")) &&
         error("set LATTICEQCD_JULIA_PROJECT for the pinned reference project")
 end
-if D1_MODE
+if D1_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE
     isnothing(QCDMEASUREMENTS_CHECKOUT) &&
-        error("set QCDMEASUREMENTS_JL_DIR for measurements_task_d1/default")
+        error("set QCDMEASUREMENTS_JL_DIR for measurements_task_d1/fermion_measurements_phase4/fermion_measurements_phase4_ensemble/default")
     isdir(QCDMEASUREMENTS_CHECKOUT) ||
         error("expected QCDMeasurements.jl checkout at $QCDMEASUREMENTS_CHECKOUT")
 end
@@ -116,7 +118,7 @@ end
 Pkg.activate(ACTIVE_PROJECT)
 using Gaugefields
 import Wilsonloop
-if D1_MODE
+if D1_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE
     using QCDMeasurements
 end
 using NPZ
@@ -161,14 +163,14 @@ isempty(strip(WILSONLOOP_DIRTY)) || error("refusing fixture provenance from dirt
 read(joinpath(WILSONLOOP_SOURCE, "src", "Wilsonloop.jl")) ==
     read(joinpath(WILSONLOOP_CHECKOUT, "src", "Wilsonloop.jl")) ||
     error("active Wilsonloop.jl source does not match the pinned checkout")
-const QCDMEASUREMENTS_VERSION = D1_MODE ? string(Base.pkgversion(QCDMeasurements)) : ""
-const QCDMEASUREMENTS_SOURCE = D1_MODE ? dirname(dirname(pathof(QCDMeasurements))) : ""
-const QCDMEASUREMENTS_COMMIT = D1_MODE ? readchomp(`git -C $QCDMEASUREMENTS_CHECKOUT rev-parse HEAD`) : ""
-const QCDMEASUREMENTS_DIRTY = D1_MODE ? read(
+const QCDMEASUREMENTS_VERSION = (D1_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE) ? string(Base.pkgversion(QCDMeasurements)) : ""
+const QCDMEASUREMENTS_SOURCE = (D1_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE) ? dirname(dirname(pathof(QCDMeasurements))) : ""
+const QCDMEASUREMENTS_COMMIT = (D1_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE) ? readchomp(`git -C $QCDMEASUREMENTS_CHECKOUT rev-parse HEAD`) : ""
+const QCDMEASUREMENTS_DIRTY = (D1_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE) ? read(
     `git -C $QCDMEASUREMENTS_CHECKOUT status --porcelain --untracked-files=all`,
     String,
 ) : ""
-if D1_MODE
+if D1_MODE || FERMION_MEASUREMENTS_MODE || FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE
     isempty(strip(QCDMEASUREMENTS_DIRTY)) ||
         error("refusing fixture provenance from dirty QCDMeasurements.jl checkout: $QCDMEASUREMENTS_CHECKOUT")
     read(joinpath(QCDMEASUREMENTS_SOURCE, "src", "QCDMeasurements.jl")) ==
@@ -320,6 +322,321 @@ end
 
 if FERMIONS_TASK_A_MODE
     generate_fermions_task_a()
+    exit()
+end
+
+const FERMION_MEASUREMENTS_PHASE4_TOLERANCE = 1.0e-24
+const FERMION_MEASUREMENTS_PHASE4_MAXSTEPS = 2_000
+const FERMION_MEASUREMENTS_PHASE4_WILSON_KAPPA = 0.08
+const FERMION_MEASUREMENTS_PHASE4_STAGGERED_MASS = 0.17
+const FERMION_MEASUREMENTS_PHASE4_FLAVOR_FACTOR = 0.5
+const FERMION_MEASUREMENTS_PHASE4_CHIRAL_SOURCES = 3
+const FERMION_MEASUREMENTS_PHASE4_CHIRAL_STATE =
+    (UInt64(11), UInt64(22), UInt64(33), UInt64(44))
+
+function fermion_measurements_phase4_field(links, kind, values)
+    field = if kind == "wilson"
+        Initialize_pseudofermion_fields(links[1], "Wilson"; nowing=true)
+    elseif kind == "staggered"
+        Initialize_pseudofermion_fields(links[1], "staggered"; nowing=true)
+    else
+        error("unknown fermion measurement field kind $kind")
+    end
+    field.f .= values
+    return field
+end
+
+function fermion_measurements_phase4_parameters(kind)
+    common = Dict{String,Any}(
+        "r" => 1.0,
+        "verbose_level" => 0,
+        "boundarycondition" => Int8[1, 1, 1, -1],
+        "method_CG" => "bicgstab",
+        "MaxCGstep" => FERMION_MEASUREMENTS_PHASE4_MAXSTEPS,
+    )
+    if kind == "wilson"
+        common["Dirac_operator"] = "Wilson"
+        common["κ"] = FERMION_MEASUREMENTS_PHASE4_WILSON_KAPPA
+        common["faster version"] = false
+        common["eps_CG"] = FERMION_MEASUREMENTS_PHASE4_TOLERANCE
+    elseif kind == "staggered"
+        common["Dirac_operator"] = "staggered"
+        common["mass"] = FERMION_MEASUREMENTS_PHASE4_STAGGERED_MASS
+        common["eps"] = FERMION_MEASUREMENTS_PHASE4_TOLERANCE
+    else
+        error("unknown fermion measurement operator kind $kind")
+    end
+    return common
+end
+
+function fermion_measurements_phase4_save_field(out, files, name, field)
+    NPZ.npzwrite(joinpath(out, "$(name)_julia.npy"), copy(field.f))
+    NPZ.npzwrite(joinpath(out, "$(name)_rust.npy"), permutedims(field.f, (1, 6, 2, 3, 4, 5)))
+    push!(files, "$(name)_julia.npy")
+    push!(files, "$(name)_rust.npy")
+end
+
+function fermion_measurements_phase4_codes(rng, components, lattice)
+    codes = Vector{Int}(undef, NC * components * prod(lattice))
+    for flat in eachindex(codes)
+        codes[flat] = Int(rand(rng, UInt64) & UInt64(3))
+    end
+    return codes
+end
+
+function fermion_measurements_phase4_noise_field(links, codes)
+    nx, ny, nz, nt = size(links[1].U)[3:6]
+    values = Array{ComplexF64}(undef, NC, nx, ny, nz, nt, 1)
+    for site in 0:(nx * ny * nz * nt - 1)
+        x = site % nx
+        q = site ÷ nx
+        y = q % ny
+        q ÷= ny
+        z = q % nz
+        t = q ÷ nz
+        for color in 0:(NC - 1)
+            flat = color + NC * site
+            code = codes[flat + 1]
+            values[color + 1, x + 1, y + 1, z + 1, t + 1, 1] =
+                (code == 0 ? 1.0 : code == 1 ? im : code == 2 ? -1.0 : -im)
+        end
+    end
+    return fermion_measurements_phase4_field(links, "staggered", values)
+end
+
+function fermion_measurements_phase4_point_source(links, kind, color, component)
+    components = kind == "wilson" ? 4 : 1
+    field = fermion_measurements_phase4_field(
+        links,
+        kind,
+        zeros(ComplexF64, size(links[1].U, 1), size(links[1].U, 3), size(links[1].U, 4), size(links[1].U, 5), size(links[1].U, 6), components),
+    )
+    field.f[color + 1, 1, 1, 1, 1, component + 1] = 1.0
+    return field
+end
+
+function fermion_measurements_phase4_solve(operator, source)
+    solution = similar(source)
+    diagnostics = solve_DinvX!(solution, operator, source)
+    applied = similar(source)
+    mul!(applied, operator, solution)
+    true_residual_squared = sum(abs2, vec(source.f) .- vec(applied.f))
+    return solution, diagnostics, true_residual_squared
+end
+
+function fermion_measurements_phase4_diagnostic(diagnostics, true_residual_squared)
+    return (
+        method=String(diagnostics.method),
+        iterations=diagnostics.iterations,
+        recursive_residual_squared=diagnostics.recursive_residual_squared,
+        initial_residual_squared=diagnostics.initial_residual_squared,
+        true_residual_squared=true_residual_squared,
+        target_residual_squared=diagnostics.target_residual_squared,
+        maximum_iterations=diagnostics.maximum_iterations,
+        restart_count=diagnostics.restart_count,
+        convergence_branch=String(diagnostics.convergence_branch),
+    )
+end
+
+function fermion_measurements_phase4_correlators(solutions, source_indices, lattice, components)
+    nx, ny, nz, nt = lattice
+    corrected = zeros(Float64, nt)
+    legacy = zeros(Float64, nt)
+    for (solution, source_index) in zip(solutions, source_indices)
+        source_color, source_component = source_index
+        for t in 1:nt, z in 1:nz, y in 1:ny, x in 1:nx
+            for color in 1:NC, component in 1:components
+                corrected[t] += abs2(solution[color, x, y, z, t, component])
+            end
+            legacy[t] += NC * components * abs2(
+                solution[source_color, x, y, z, t, source_component])
+        end
+    end
+    all(isfinite, corrected) || error("non-finite corrected pion correlator")
+    all(isfinite, legacy) || error("non-finite legacy pion correlator")
+    return corrected, legacy
+end
+
+function fermion_measurements_phase4_write_diagnostics(io, diagnostics)
+    q = Char(34)
+    print(io, "[")
+    for (index, diagnostic) in enumerate(diagnostics)
+        index > 1 && print(io, ", ")
+        print(io, "{", q, "method", q, ": ", q, diagnostic.method, q,
+            ", ", q, "iterations", q, ": ", diagnostic.iterations,
+            ", ", q, "recursive_residual_squared", q, ": ", repr(diagnostic.recursive_residual_squared),
+            ", ", q, "initial_residual_squared", q, ": ", repr(diagnostic.initial_residual_squared),
+            ", ", q, "true_residual_squared", q, ": ", repr(diagnostic.true_residual_squared),
+            ", ", q, "target_residual_squared", q, ": ", repr(diagnostic.target_residual_squared),
+            ", ", q, "maximum_iterations", q, ": ", diagnostic.maximum_iterations,
+            ", ", q, "restart_count", q, ": ", diagnostic.restart_count,
+            ", ", q, "convergence_branch", q, ": ", q, diagnostic.convergence_branch, q, "}")
+    end
+    print(io, "]")
+end
+
+function generate_fermion_measurements_phase4()
+    Base.VERSION == v"1.12.5" || error("expected Julia 1.12.5, found $(Base.VERSION)")
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == "9e5719970770f4497405a856315c90bef7f74449" ||
+        error("expected Gaugefields.jl commit 9e5719970770f4497405a856315c90bef7f74449")
+    LATTICEDIRACOPERATORS_VERSION == "0.6.4" ||
+        error("expected LatticeDiracOperators.jl v0.6.4, found $LATTICEDIRACOPERATORS_VERSION")
+    LATTICEDIRACOPERATORS_COMMIT == "bdef628184597815ba3e0cddf2536df767e78a02" ||
+        error("expected LatticeDiracOperators.jl commit bdef628184597815ba3e0cddf2536df767e78a02")
+    QCDMEASUREMENTS_VERSION == "0.2.13" ||
+        error("expected QCDMeasurements.jl v0.2.13, found $QCDMEASUREMENTS_VERSION")
+    QCDMEASUREMENTS_COMMIT == "9e04c37bbd68712cf7a749ae5aff10eb6aae4566" ||
+        error("expected QCDMeasurements.jl commit 9e04c37bbd68712cf7a749ae5aff10eb6aae4566")
+
+    lattice = (2, 2, 2, 4)
+    links = fermions_task_a_links(lattice)
+    out = joinpath(@__DIR__, "fermion_measurements_phase4")
+    isdir(out) && rm(out; recursive=true, force=true)
+    mkpath(out)
+    files = String[]
+    for direction in 1:4
+        NPZ.npzwrite(joinpath(out, "u$(direction - 1).npy"), links[direction].U)
+        push!(files, "u$(direction - 1).npy")
+    end
+
+    source_indices = Dict(
+        "wilson" => [(color, component) for color in 1:NC for component in 1:4],
+        "staggered" => [(color, 1) for color in 1:NC],
+    )
+    all_diagnostics = Dict{String,Any}()
+    for kind in ("wilson", "staggered")
+        components = kind == "wilson" ? 4 : 1
+        template = fermion_measurements_phase4_field(
+            links,
+            kind,
+            zeros(ComplexF64, NC, lattice..., components),
+        )
+        parameters = fermion_measurements_phase4_parameters(kind)
+        operator = Dirac_operator(links, template, parameters)
+        solutions = Any[]
+        diagnostics = Any[]
+        for (color, component) in source_indices[kind]
+            source = fermion_measurements_phase4_point_source(links, kind, color - 1, component - 1)
+            solution, raw_diagnostics, true_residual_squared =
+                fermion_measurements_phase4_solve(operator, source)
+            name = "$(kind)_point_source_c$(color - 1)_s$(component - 1)"
+            fermion_measurements_phase4_save_field(out, files, name, source)
+            fermion_measurements_phase4_save_field(out, files, "$(kind)_propagator_c$(color - 1)_s$(component - 1)", solution)
+            push!(solutions, solution)
+            push!(diagnostics, fermion_measurements_phase4_diagnostic(raw_diagnostics, true_residual_squared))
+        end
+        corrected, legacy = fermion_measurements_phase4_correlators(
+            [solution.f for solution in solutions],
+            source_indices[kind],
+            lattice,
+            components,
+        )
+        for (name, values) in (("pion_$(kind)_corrected", corrected), ("pion_$(kind)_legacy", legacy))
+            NPZ.npzwrite(joinpath(out, "$(name)_julia.npy"), values)
+            NPZ.npzwrite(joinpath(out, "$(name)_rust.npy"), values)
+            push!(files, "$(name)_julia.npy")
+            push!(files, "$(name)_rust.npy")
+        end
+        all_diagnostics[kind] = diagnostics
+    end
+
+    chiral_rng = Random.Xoshiro(FERMION_MEASUREMENTS_PHASE4_CHIRAL_STATE...)
+    chiral_codes = [
+        fermion_measurements_phase4_codes(chiral_rng, 1, lattice)
+        for _ in 1:FERMION_MEASUREMENTS_PHASE4_CHIRAL_SOURCES
+    ]
+    chiral_source_values = Float64[]
+    chiral_diagnostics = Any[]
+    chiral_operator = Dirac_operator(
+        links,
+        fermion_measurements_phase4_noise_field(links, chiral_codes[1]),
+        fermion_measurements_phase4_parameters("staggered"),
+    )
+    for (source_number, codes) in enumerate(chiral_codes)
+        source = fermion_measurements_phase4_noise_field(links, codes)
+        solution, raw_diagnostics, true_residual_squared =
+            fermion_measurements_phase4_solve(chiral_operator, source)
+        fermion_measurements_phase4_save_field(
+            out,
+            files,
+            "staggered_chiral_source_$(source_number - 1)",
+            source,
+        )
+        fermion_measurements_phase4_save_field(
+            out,
+            files,
+            "staggered_chiral_solution_$(source_number - 1)",
+            solution,
+        )
+        push!(chiral_source_values, real(dot(source, solution)))
+        push!(chiral_diagnostics, fermion_measurements_phase4_diagnostic(raw_diagnostics, true_residual_squared))
+    end
+    chiral_value = FERMION_MEASUREMENTS_PHASE4_FLAVOR_FACTOR *
+        (sum(chiral_source_values) / length(chiral_source_values)) / prod(lattice)
+    NPZ.npzwrite(joinpath(out, "staggered_chiral_source_values_julia.npy"), chiral_source_values)
+    NPZ.npzwrite(joinpath(out, "staggered_chiral_source_values_rust.npy"), chiral_source_values)
+    NPZ.npzwrite(joinpath(out, "staggered_chiral_value_julia.npy"), [chiral_value])
+    NPZ.npzwrite(joinpath(out, "staggered_chiral_value_rust.npy"), [chiral_value])
+    append!(files, [
+        "staggered_chiral_source_values_julia.npy",
+        "staggered_chiral_source_values_rust.npy",
+        "staggered_chiral_value_julia.npy",
+        "staggered_chiral_value_rust.npy",
+    ])
+    open(joinpath(out, "staggered_chiral_codes.json"), "w") do io
+        print(io, "[", join([json_number_array(codes) for codes in chiral_codes], ", "), "]\n")
+    end
+    push!(files, "staggered_chiral_codes.json")
+    sort!(files)
+
+    q = Char(34)
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n")
+        print(io, "  \"schema\": \"fermion_measurements_phase4.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 4],\n  \"nc\": 3,\n")
+        print(io, "  \"wilson\": {\"components\": 4, \"kappa\": ", repr(FERMION_MEASUREMENTS_PHASE4_WILSON_KAPPA), ", \"boundary\": [1, 1, 1, -1]},\n")
+        print(io, "  \"staggered\": {\"components\": 1, \"mass\": ", repr(FERMION_MEASUREMENTS_PHASE4_STAGGERED_MASS), ", \"boundary\": [1, 1, 1, -1]},\n")
+        print(io, "  \"chiral\": {\"operator\": \"staggered\", \"flavor_factor\": ", repr(FERMION_MEASUREMENTS_PHASE4_FLAVOR_FACTOR), ", \"source_count\": ", FERMION_MEASUREMENTS_PHASE4_CHIRAL_SOURCES, ", \"rng_state\": [", join(FERMION_MEASUREMENTS_PHASE4_CHIRAL_STATE, ", "), "], \"codes_file\": \"staggered_chiral_codes.json\", \"code_order\": \"source, site, component, color; each source array is Rust [color, component, x, y, z, t] order\", \"mapping\": [\"word & 3 = 0 -> 1\", \"word & 3 = 1 -> i\", \"word & 3 = 2 -> -1\", \"word & 3 = 3 -> -i\"]},\n")
+        print(io, "  \"solver_parameters\": {\"absolute_squared_tolerance\": ", repr(FERMION_MEASUREMENTS_PHASE4_TOLERANCE), ", \"max_iterations\": ", FERMION_MEASUREMENTS_PHASE4_MAXSTEPS, ", \"wilson_tolerance_key\": \"eps_CG\", \"staggered_tolerance_key\": \"eps\", \"julia_solver_keywords\": [\"eps\", \"maxsteps\", \"verbose\"], \"rust_solver\": \"bicgstab\"},\n")
+        print(io, "  \"gaugefields_jl\": {\"package\": \"Gaugefields.jl\", \"version\": \"$VERSION\", \"commit\": \"$COMMIT\", \"clean\": true},\n")
+        print(io, "  \"latticediracoperators_jl\": {\"package\": \"LatticeDiracOperators.jl\", \"version\": \"$LATTICEDIRACOPERATORS_VERSION\", \"commit\": \"$LATTICEDIRACOPERATORS_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"qcdmeasurements_jl\": {\"package\": \"QCDMeasurements.jl\", \"version\": \"$QCDMEASUREMENTS_VERSION\", \"commit\": \"$QCDMEASUREMENTS_COMMIT\", \"clean\": true},\n")
+        print(io, "  \"source_urls\": [\n")
+        print(io, "    \"https://github.com/akio-tomiya/QCDMeasurements.jl/blob/$QCDMEASUREMENTS_COMMIT/src/measurements/measure_Pion_correlator.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/QCDMeasurements.jl/blob/$QCDMEASUREMENTS_COMMIT/src/measurements/measure_chiral_condensate.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/AbstractGaugefields.jl\",\n")
+        print(io, "    \"https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/nowing/gaugefields_4D_nowing.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/Diracoperators.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/WilsonFermion/WilsonFermion_4D_nowing.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/StaggeredFermion/StaggeredFermion_4D_nowing.jl\",\n")
+        print(io, "    \"https://github.com/akio-tomiya/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/cgmethods.jl\"\n  ],\n")
+        print(io, "  \"source_functions\":  [\"Initialize_Gaugefields\", \"Wilson_Dirac_operator\", \"Staggered_Dirac_operator\", \"solve_DinvX!\", \"bicgstab\", \"QCDMeasurements pion source ordering and contraction\"],\n")
+        print(io, "  \"entrypoint_map\": [\n")
+        print(io, "    {\"julia\": \"Wilson_Dirac_operator + solve_DinvX!\", \"julia_source\": \"src/Diracoperators.jl + src/cgmethods.jl\", \"rust\": \"WilsonDirac + bicgstab\"},\n")
+        print(io, "    {\"julia\": \"Staggered_Dirac_operator + solve_DinvX!\", \"julia_source\": \"src/StaggeredFermion/StaggeredFermion.jl + src/Diracoperators.jl\", \"rust\": \"StaggeredDirac + bicgstab\"},\n")
+        print(io, "    {\"julia\": \"Pion_correlator_measurement source loop\", \"julia_source\": \"QCDMeasurements/src/measurements/measure_Pion_correlator.jl\", \"rust\": \"measurements::fermions::pion_correlator; corrected full Frobenius contraction\"},\n")
+        print(io, "    {\"julia\": \"Chiral_condensate_measurement normalization\", \"julia_source\": \"QCDMeasurements/src/measurements/measure_chiral_condensate.jl\", \"rust\": \"measurements::fermions::stochastic_chiral_condensate; explicit canonical Z4 codes\"}\n  ],\n")
+        print(io, "  \"layout\": {\"julia_shape\": \"[3,NX,NY,NZ,NT,components]\", \"rust_shape\": \"[3,components,NX,NY,NZ,NT]\", \"conversion\": \"permutedims(array, (1, 6, 2, 3, 4, 5))\", \"permutation\": [1, 6, 2, 3, 4, 5], \"site_order\": \"x fastest\", \"source_site\": [0, 0, 0, 0]},\n")
+        print(io, "  \"contraction\": {\"corrected\": \"sum_xyz sum_alpha,beta abs2(G_beta,alpha)\", \"legacy\": \"source-diagonal value duplicated across every sink color/component\", \"high_level_pion_reconstruction_called\": false, \"staggered_sign\": \"none\", \"normalization\": \"none for pion; flavor_factor * mean(Re(rdagger p)) / NV for chiral\"},\n")
+        print(io, "  \"solver_diagnostics\": {\n")
+        print(io, "    \"julia\": {\"method\": \"bicgstab\", \"reports_are_provenance_only\": true, \"iteration_counts_compared\": false, \"wilson_reports\": ")
+        fermion_measurements_phase4_write_diagnostics(io, all_diagnostics["wilson"])
+        print(io, ", \"staggered_reports\": ")
+        fermion_measurements_phase4_write_diagnostics(io, all_diagnostics["staggered"])
+        print(io, ", \"chiral_reports\": ")
+        fermion_measurements_phase4_write_diagnostics(io, chiral_diagnostics)
+        print(io, "},\n")
+        print(io, "    \"rust\": {\"method\": \"dirac_operators::bicgstab\", \"reports\": \"PionCorrelator::solver_reports and ChiralCondensate::solver_reports\", \"fields\": [\"method\", \"iterations\", \"recursive_residual_squared\", \"initial_residual_squared\", \"true_residual_squared\", \"tolerance\", \"maximum_iterations\", \"restart_count\", \"convergence_branch\"], \"iteration_counts_compared\": false, \"true_residual_gate\": \"fresh relative residual <= 1e-11\"}\n  },\n")
+        print(io, "  \"comparison\": {\"payload_max_abs_tolerance\": 2.0e-12, \"payload_relative_tolerance\": 2.0e-10, \"true_relative_residual_tolerance\": 1.0e-11, \"criterion\": \"solutions and corrected measurements compare; solver iteration counts are provenance only\"},\n")
+        print(io, "  \"files\": [", join([q * file * q for file in files], ", "), "],\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"fermion_measurements_phase4\", \"julia_version\": \"$(Base.VERSION)\", \"randomness\": \"fixed Xoshiro state; generated canonical Z4 codes are stored explicitly\"}\n")
+        print(io, "}\n")
+    end
+end
+
+if FERMION_MEASUREMENTS_MODE
+    generate_fermion_measurements_phase4()
     exit()
 end
 
@@ -1730,6 +2047,398 @@ end
 
 if FERMIONS_TASK_E_ENSEMBLE_MODE
     generate_fermions_task_e_ensemble()
+    exit()
+end
+
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MASTER_SEED = 2026082001
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BURN_IN = 4
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BLOCKS = 4
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_PER_BLOCK = 4
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MASS = 0.5
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BETA = 5.7
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_NF = 2
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_STEP_SIZE = 0.01
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_STEPS = 2
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_TOLERANCE = 1.0e-24
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MAXSTEPS = 2_000
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_LAMBDA_LOW = 0.0004
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_LAMBDA_HIGH = 64.0
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_SOURCES = 2
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_RUST_UPDATE_STATE =
+    (UInt64(0x5048345f55504431), UInt64(0x5048345f55504432), UInt64(0x5048345f55504433), UInt64(0x5048345f55504434))
+const FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_RUST_SOURCE_STATE =
+    (UInt64(0x5048345f53524331), UInt64(0x5048345f53524332), UInt64(0x5048345f53524333), UInt64(0x5048345f53524334))
+
+function fermion_measurements_phase4_ensemble_field(links, values)
+    field = Initialize_pseudofermion_fields(links[1], "staggered"; nowing=true)
+    field.f .= values
+    return field
+end
+
+function fermion_measurements_phase4_ensemble_parameters(method)
+    return Dict{String,Any}(
+        "Dirac_operator" => "Staggered",
+        "mass" => FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MASS,
+        "verbose_level" => 0,
+        "boundarycondition" => Int8[1, 1, 1, -1],
+        "eps" => FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_TOLERANCE,
+        "MaxCGstep" => FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MAXSTEPS,
+        "method_CG" => method,
+    )
+end
+
+function fermion_measurements_phase4_ensemble_solve_checked(solution, operator, source)
+    diagnostics = solve_DinvX!(solution, operator, source)
+    applied = similar(source)
+    mul!(applied, operator, solution)
+    residual_squared = sum(abs2, vec(source.f) .- vec(applied.f))
+    isfinite(residual_squared) && residual_squared <= FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_TOLERANCE ||
+        error("Phase 4 measurement solve failed the fresh true-residual gate: $residual_squared")
+    return diagnostics, residual_squared
+end
+
+function fermion_measurements_phase4_ensemble_point_source(links, color)
+    nx, ny, nz, nt = size(links[1].U)[3:6]
+    values = zeros(ComplexF64, NC, nx, ny, nz, nt, 1)
+    values[color, 1, 1, 1, 1, 1] = 1.0
+    return fermion_measurements_phase4_ensemble_field(links, values)
+end
+
+function fermion_measurements_phase4_ensemble_pion(links, parameters)
+    nx, ny, nz, nt = size(links[1].U)[3:6]
+    template = fermion_measurements_phase4_ensemble_field(
+        links, zeros(ComplexF64, NC, nx, ny, nz, nt, 1))
+    operator = LatticeDiracOperators.Dirac_operators.Staggered_Dirac_operator(
+        links, template, parameters)
+    solutions = Any[]
+    for color in 1:NC
+        source = fermion_measurements_phase4_ensemble_point_source(links, color)
+        solution = similar(source)
+        fermion_measurements_phase4_ensemble_solve_checked(solution, operator, source)
+        push!(solutions, solution)
+    end
+
+    values = zeros(Float64, nt)
+    for solution in solutions, t in 1:nt, z in 1:nz, y in 1:ny, x in 1:nx, sink_color in 1:NC
+        values[t] += abs2(solution[sink_color, x, y, z, t, 1])
+    end
+    all(isfinite, values) || error("non-finite Phase 4 pion correlator")
+    return values
+end
+
+function fermion_measurements_phase4_ensemble_chiral(links, parameters, source_seeds)
+    nx, ny, nz, nt = size(links[1].U)[3:6]
+    template = fermion_measurements_phase4_ensemble_field(
+        links, zeros(ComplexF64, NC, nx, ny, nz, nt, 1))
+    operator = LatticeDiracOperators.Dirac_operators.Staggered_Dirac_operator(
+        links, template, parameters)
+    source_values = Float64[]
+    source_codes = Vector{Vector{Int}}()
+    for source_seed in source_seeds
+        Random.seed!(source_seed)
+        values = Array{ComplexF64}(undef, NC, nx, ny, nz, nt, 1)
+        codes = Int[]
+        for index in eachindex(values)
+            code = rand(0:3)
+            push!(codes, code)
+            values[index] = code == 0 ? 1.0 : code == 1 ? im : code == 2 ? -1.0 : -im
+        end
+        source = fermion_measurements_phase4_ensemble_field(links, values)
+        solution = similar(source)
+        fermion_measurements_phase4_ensemble_solve_checked(solution, operator, source)
+        value = (FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_NF / 4) /
+            links[1].NV * real(dot(source, solution))
+        isfinite(value) || error("non-finite Phase 4 chiral source value")
+        push!(source_values, value)
+        push!(source_codes, codes)
+    end
+    value = sum(source_values) / length(source_values)
+    isfinite(value) || error("non-finite Phase 4 chiral condensate")
+    return value, source_values, source_codes
+end
+
+function fermion_measurements_phase4_ensemble_vector_summary(records, block_means, field)
+    mean_value = [sum(record[field][timeslice] for record in records) / length(records)
+                  for timeslice in eachindex(records[1][field])]
+    standard_error = [begin
+        values = [block[timeslice] for block in block_means]
+        average = mean_value[timeslice]
+        variance = sum((value - average)^2 for value in values) / (length(values) - 1)
+        sqrt(variance / length(values))
+    end for timeslice in eachindex(mean_value)]
+    return (block_means=block_means, mean=mean_value, standard_error=standard_error)
+end
+
+function fermion_measurements_phase4_ensemble_write_coefficients(io, key, table_name, coeff, power, role)
+    q = Char(34)
+    bits = UInt64[reinterpret(UInt64, coeff.α0); reinterpret.(UInt64, coeff.α); reinterpret.(UInt64, coeff.β)]
+    print(io, q, key, q, ": {", q, "name", q, ": ", q, table_name, q,
+        ", ", q, "role", q, ": ", q, role, q,
+        ", ", q, "power", q, ": ", repr(power), ", ", q, "degree", q, ": ", coeff.n,
+        ", ", q, "alpha0", q, ": ", repr(coeff.α0), ", ", q, "alpha", q, ": ",
+        json_number_array(coeff.α), ", ", q, "beta", q, ": ", json_number_array(coeff.β),
+        ", ", q, "bits", q, ": ", json_string_array(hex_word.(bits)), "}")
+end
+
+function fermion_measurements_phase4_ensemble_write_measurement(io, record)
+    q = Char(34)
+    print(io, "    {", q, "measurement", q, ": ", record.measurement,
+        ", ", q, "trajectory", q, ": ", record.trajectory,
+        ", ", q, "block", q, ": ", record.block,
+        ", ", q, "trajectory_in_block", q, ": ", record.trajectory_in_block,
+        ", ", q, "pion", q, ": ", json_number_array(record.pion),
+        ", ", q, "chiral_source_values", q, ": ", json_number_array(record.chiral_source_values),
+        ", ", q, "chiral", q, ": ", repr(record.chiral),
+        ", ", q, "source_seeds", q, ": ", json_number_array(record.source_seeds),
+        ", ", q, "source_codes", q, ": [",
+        join([json_number_array(codes) for codes in record.source_codes], ", "), "]}")
+end
+
+function generate_fermion_measurements_phase4_ensemble()
+    Base.VERSION == v"1.12.5" || error("expected Julia 1.12.5, found $(Base.VERSION)")
+    VERSION == "0.7.2" || error("expected Gaugefields.jl v0.7.2, found $VERSION")
+    COMMIT == "9e5719970770f4497405a856315c90bef7f74449" ||
+        error("expected Gaugefields.jl commit 9e5719970770f4497405a856315c90bef7f74449")
+    LATTICEDIRACOPERATORS_VERSION == "0.6.4" ||
+        error("expected LatticeDiracOperators.jl v0.6.4, found $LATTICEDIRACOPERATORS_VERSION")
+    LATTICEDIRACOPERATORS_COMMIT == "bdef628184597815ba3e0cddf2536df767e78a02" ||
+        error("expected LatticeDiracOperators.jl commit bdef628184597815ba3e0cddf2536df767e78a02")
+    WILSONLOOP_VERSION == "0.1.5" ||
+        error("expected Wilsonloop.jl v0.1.5, found $WILSONLOOP_VERSION")
+    WILSONLOOP_COMMIT == "e1a617fdedb19b785f89bdeb13c30e53b20743a7" ||
+        error("expected Wilsonloop.jl commit e1a617fdedb19b785f89bdeb13c30e53b20743a7")
+    QCDMEASUREMENTS_VERSION == "0.2.13" ||
+        error("expected QCDMeasurements.jl v0.2.13, found $QCDMEASUREMENTS_VERSION")
+    QCDMEASUREMENTS_COMMIT == "9e04c37bbd68712cf7a749ae5aff10eb6aae4566" ||
+        error("expected QCDMeasurements.jl commit 9e04c37bbd68712cf7a749ae5aff10eb6aae4566")
+
+    lattice = (2, 2, 2, 2)
+    beta = FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BETA
+    nf = FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_NF
+    total_measurements = FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BLOCKS *
+        FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_PER_BLOCK
+    total_trajectories = FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BURN_IN + total_measurements
+    update_seeds = [FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MASTER_SEED + trajectory - 1
+                    for trajectory in 1:total_trajectories]
+    source_seeds = [[FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MASTER_SEED + 100_000 +
+                     2 * (measurement - 1) + source for source in 1:FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_SOURCES]
+                    for measurement in 1:total_measurements]
+
+    update_parameters = fermion_measurements_phase4_ensemble_parameters("cg")
+    measurement_parameters = fermion_measurements_phase4_ensemble_parameters("bicgstab")
+    Random.seed!(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MASTER_SEED)
+    links = Initialize_Gaugefields(NC, 0, lattice...; condition="cold")
+    xi = fermion_measurements_phase4_ensemble_field(
+        links, zeros(ComplexF64, NC, lattice..., 1))
+    phi = similar(xi)
+    update_dirac = LatticeDiracOperators.Dirac_operators.Staggered_Dirac_operator(
+        links, xi, update_parameters)
+    fermi_action = FermiAction(update_dirac, Dict("Nf" => nf))
+    gauge_action = GaugeAction(links)
+    plaqloop = make_loops_fromname("plaquette")
+    append!(plaqloop, plaqloop')
+    push!(gauge_action, beta / 2, plaqloop)
+    momentum = initialize_TA_Gaugefields(links)
+    old_links = similar(links)
+
+    trajectory_records = Any[]
+    measurements = Any[]
+    block_measurements = [Any[] for _ in 1:FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BLOCKS]
+    burn_in_delta_h = Float64[]
+    burn_in_accepted = Bool[]
+    measurement_index = 0
+    for trajectory in 1:total_trajectories
+        trajectory_seed = update_seeds[trajectory]
+        Random.seed!(trajectory_seed)
+        gauss_distribution!(momentum)
+        gauss_sampling_in_action!(xi, links, fermi_action)
+        sample_pseudofermions!(phi, links, fermi_action, xi)
+        substitute_U!(old_links, links)
+        initial_action = evaluate_FermiAction(fermi_action, links, phi)
+        initial_hamiltonian = fermions_task_c_hamiltonian(
+            links, gauge_action, momentum, initial_action)
+        fermions_task_c_trajectory!(
+            links, momentum, gauge_action, fermi_action, phi,
+            FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_STEP_SIZE,
+            FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_STEPS,
+        )
+        proposed_action = evaluate_FermiAction(fermi_action, links, phi)
+        proposed_hamiltonian = fermions_task_c_hamiltonian(
+            links, gauge_action, momentum, proposed_action)
+        delta_h = proposed_hamiltonian - initial_hamiltonian
+        acceptance_probability = delta_h <= 0.0 ? 1.0 : exp(-delta_h)
+        acceptance_uniform = rand()
+        accepted = acceptance_uniform <= acceptance_probability
+        accepted || substitute_U!(links, old_links)
+        phase = trajectory <= FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BURN_IN ?
+            "thermalization" : "measurement"
+        push!(trajectory_records, (
+            trajectory=trajectory, phase=phase, seed=trajectory_seed,
+            delta_h=delta_h, acceptance_probability=acceptance_probability,
+            acceptance_uniform=acceptance_uniform, accepted=accepted,
+        ))
+        if trajectory <= FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BURN_IN
+            push!(burn_in_delta_h, delta_h)
+            push!(burn_in_accepted, accepted)
+            continue
+        end
+
+        measurement_index += 1
+        block = div(measurement_index - 1,
+            FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_PER_BLOCK) + 1
+        trajectory_in_block = mod(measurement_index - 1,
+            FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_PER_BLOCK) + 1
+        pion = fermion_measurements_phase4_ensemble_pion(links, measurement_parameters)
+        chiral, chiral_source_values, codes =
+            fermion_measurements_phase4_ensemble_chiral(
+                links, measurement_parameters, source_seeds[measurement_index])
+        record = (
+            measurement=measurement_index, trajectory=trajectory, block=block,
+            trajectory_in_block=trajectory_in_block, pion=pion,
+            chiral_source_values=chiral_source_values, chiral=chiral,
+            source_seeds=source_seeds[measurement_index], source_codes=codes,
+        )
+        push!(measurements, record)
+        push!(block_measurements[block], record)
+    end
+
+    measured_trajectory_records = trajectory_records[FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BURN_IN + 1:end]
+    pion_block_means = [[sum(record.pion[timeslice] for record in block) / length(block)
+                         for timeslice in 1:2] for block in block_measurements]
+    chiral_block_means = [sum(record.chiral for record in block) / length(block)
+                          for block in block_measurements]
+    delta_h_block_means = [begin
+        block = measured_trajectory_records[(block_index - 1) * FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_PER_BLOCK + 1:block_index * FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_PER_BLOCK]
+        sum(record.delta_h for record in block) / length(block)
+    end for block_index in 1:FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BLOCKS]
+    pion_summary = fermion_measurements_phase4_ensemble_vector_summary(
+        measurements, pion_block_means, :pion)
+    chiral_summary = fermions_task_e_ensemble_summary(
+        [record.chiral for record in measurements], chiral_block_means)
+    delta_h_summary = fermions_task_e_ensemble_summary(
+        [record.delta_h for record in measured_trajectory_records], delta_h_block_means)
+    measured_accepted = count(record -> record.accepted, measured_trajectory_records)
+    measured_rejected = total_measurements - measured_accepted
+
+    out = joinpath(@__DIR__, "fermion_measurements_phase4_ensemble")
+    isdir(out) && rm(out; recursive=true, force=true)
+    mkpath(out)
+    q = Char(34)
+    open(joinpath(out, "metadata.json"), "w") do io
+        print(io, "{\n")
+        print(io, "  \"schema\": \"fermion_measurements_phase4_ensemble.v1\",\n")
+        print(io, "  \"lattice\": [2, 2, 2, 2],\n  \"nc\": 3,\n")
+        print(io, "  \"beta\": ", repr(beta), ",\n  \"mass\": ", repr(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MASS), ",\n")
+        print(io, "  \"nf\": ", nf, ",\n  \"boundaries\": [1, 1, 1, -1],\n")
+        print(io, "  \"spectral_bounds\": {\"claimed_lower\": ", repr(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_LAMBDA_LOW),
+            ", \"claimed_upper\": ", repr(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_LAMBDA_HIGH),
+            ", \"coefficient_interval\": [0.0004, 64.0]},\n")
+        print(io, "  \"rhmc_tables\": {")
+        fermion_measurements_phase4_ensemble_write_coefficients(
+            io, "refresh", "coeffs_18", LatticeDiracOperators.Rhmc.coeffs_18, 1.0 / 8.0, "x^(+1/8) degree-15 refresh")
+        print(io, ", ")
+        fermion_measurements_phase4_ensemble_write_coefficients(
+            io, "action", "coeffs_m18", LatticeDiracOperators.Rhmc.coeffs_m18, -1.0 / 8.0, "x^(-1/8) degree-15 action")
+        print(io, ", ")
+        fermion_measurements_phase4_ensemble_write_coefficients(
+            io, "md_force", "coeffs_m14_n10", LatticeDiracOperators.Rhmc.coeffs_m14_n10, -1.0 / 4.0, "x^(-1/4) degree-10 MD force")
+        print(io, "},\n")
+        print(io, "  \"scalar_log_grid\": {\"points\": 4097, \"spacing\": \"lambda_low*exp(log(lambda_high/lambda_low)*i/(points-1)); endpoints exact\", \"max_abs_error\": {\"refresh\": 2.505791796281187e-9, \"action\": 3.9620045022559225e-9, \"md_force\": 1.5595609319518644e-5}, \"powers\": {\"refresh\": 0.125, \"action\": -0.125, \"md_force\": -0.25}},\n")
+        print(io, "  \"solver_parameters\": {\"absolute_squared_tolerance\": ", repr(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_TOLERANCE),
+            ", \"max_iterations\": ", FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MAXSTEPS,
+            ", \"trajectory_method\": \"multi_shift_cg\", \"measurement_method\": \"bicgstab\", \"rust_solver\": \"checked true-residual solvers\", \"true_residual_gate\": \"fresh sum(abs2, b-D*x) <= 1e-24\", \"julia_keys\": [\"Dirac_operator\", \"mass\", \"verbose_level\", \"boundarycondition\", \"eps\", \"MaxCGstep\", \"method_CG\"]},\n")
+        print(io, "  \"schedule\": {\"initial_condition\": \"cold\", \"thermalization_trajectories\": ", FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BURN_IN,
+            ", \"measurements\": ", total_measurements, ", \"measurement_interval\": 1, \"blocks\": ", FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BLOCKS,
+            ", \"measurements_per_block\": ", FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_PER_BLOCK,
+            ", \"total_trajectories\": ", total_trajectories, ", \"step_size\": ", repr(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_STEP_SIZE),
+            ", \"md_steps\": ", FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_STEPS,
+            ", \"measurement\": \"after each trajectory after thermalization; rejected links are restored before measurement\",\n")
+        print(io, "    \"integrator\": \"U <- exp((dt/2)P)U; P <- P - dt*(gauge_force/NC + fermion_force); U <- exp((dt/2)P)U\",\n")
+        print(io, "    \"acceptance\": \"unconditional rand() draw; accept iff rand() <= min(1, exp(-delta_h)); rejected links roll back\"},\n")
+        print(io, "  \"streams\": {\"independence\": \"Julia and Rust start from independent cold configurations and never exchange configurations or measurement payloads\",\n")
+        print(io, "    \"julia\": {\"update_seeds\": ", json_number_array(update_seeds), ", \"source_seeds\": [")
+        for (index, seeds) in enumerate(source_seeds)
+            index > 1 && print(io, ", ")
+            print(io, json_number_array(seeds))
+        end
+        print(io, "], \"update_policy\": \"Random.seed!(trajectory_seed) before each pinned momentum/pseudofermion/acceptance sequence\", \"source_policy\": \"Random.seed!(source_seed) immediately before each explicit source; codes are recorded per source\", \"source_order\": \"Julia eachindex order [color, x, y, z, t, component] with color fastest; one component\", \"z4_mapping\": \"code 0 -> 1, code 1 -> i, code 2 -> -1, code 3 -> -i\"},\n")
+        print(io, "    \"rust\": {\"update_state\": [", join(string.(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_RUST_UPDATE_STATE), ", "), "], \"source_state\": [", join(string.(FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_RUST_SOURCE_STATE), ", "), "], \"update_policy\": \"one continuous ReproducibleRng xoshiro256++ stream owned by the Rust HMC test\", \"source_policy\": \"one separate continuous ReproducibleRng xoshiro256++ stream; two sources per measurement\", \"configuration_policy\": \"cold Rust configuration created independently; no Julia configuration is read\", \"z4_mapping\": \"raw word & 3: 0 -> 1, 1 -> i, 2 -> -1, 3 -> -i\"}},\n")
+        print(io, "  \"normalization\": {\"pion\": \"sum over all three point sources and sink color of abs2(G_sink,source); no normalization\", \"chiral\": \"(Nf/4) * mean(Re(dot(r, D^-1*r))) / NV\", \"nv\": ", links[1].NV, ", \"nf_over_four\": ", repr(nf / 4), ", \"standard_error\": \"sample standard deviation of four consecutive block means divided by sqrt(4)\"},\n")
+        print(io, "  \"contraction\": {\"pion\": \"corrected full Frobenius contraction over all sink colors for each of the three color point sources\", \"high_level_pion_reconstruction_called\": false, \"staggered_sign\": \"none\", \"legacy_issue\": \"Issue #29 source-diagonal duplication is not used\", \"normalization\": \"sum over all three point sources and sink color of abs2(G_sink,source); no normalization\"},\n")
+        print(io, "  \"trajectories\": [\n")
+        for (index, record) in enumerate(trajectory_records)
+            index > 1 && print(io, ",\n")
+            print(io, "    {\"trajectory\": ", record.trajectory, ", \"phase\": \"", record.phase, "\", \"seed\": ", record.seed,
+                ", \"delta_h\": ", repr(record.delta_h), ", \"acceptance_probability\": ", repr(record.acceptance_probability),
+                ", \"acceptance_uniform\": ", repr(record.acceptance_uniform), ", \"accepted\": ", record.accepted, "}")
+        end
+        print(io, "\n  ],\n  \"measurements\": [\n")
+        for (index, record) in enumerate(measurements)
+            index > 1 && print(io, ",\n")
+            fermion_measurements_phase4_ensemble_write_measurement(io, record)
+        end
+        print(io, "\n  ],\n  \"blocks\": [\n")
+        for block in 1:FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BLOCKS
+            block > 1 && print(io, ",\n")
+            records = block_measurements[block]
+            accepted_in_block = count(record -> trajectory_records[
+                FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_BURN_IN +
+                record.measurement].accepted, records)
+            print(io, "    {\"block\": ", block, ", \"measurements\": ",
+                json_number_array([record.measurement for record in records]),
+                ", \"pion_mean\": ", json_number_array(pion_block_means[block]),
+                ", \"chiral_mean\": ", repr(chiral_block_means[block]),
+                ", \"delta_h_mean\": ", repr(delta_h_block_means[block]),
+                ", \"accepted\": ", accepted_in_block, ", \"total\": 4}")
+        end
+        print(io, "\n  ],\n  \"statistics\": {\n")
+        print(io, "    \"pion\": {\"block_means\": [", join([json_number_array(block) for block in pion_summary.block_means], ", "), "], \"mean\": ", json_number_array(pion_summary.mean), ", \"standard_error\": ", json_number_array(pion_summary.standard_error), "},\n")
+        print(io, "    \"chiral\": {\"block_means\": ", json_number_array(chiral_summary.block_means), ", \"mean\": ", repr(chiral_summary.mean), ", \"standard_error\": ", repr(chiral_summary.standard_error), "},\n")
+        print(io, "    \"delta_h\": {\"block_means\": ", json_number_array(delta_h_summary.block_means), ", \"mean\": ", repr(delta_h_summary.mean), ", \"standard_error\": ", repr(delta_h_summary.standard_error), "},\n")
+        print(io, "    \"mean_delta_h\": ", repr(delta_h_summary.mean), ",\n")
+        print(io, "    \"acceptance\": {\"accepted\": ", measured_accepted, ", \"rejected\": ", measured_rejected, ", \"total\": ", total_measurements, ", \"rate\": ", repr(measured_accepted / total_measurements), "}\n  },\n")
+        print(io, "  \"burn_in_summary\": {\"delta_h\": ", json_number_array(burn_in_delta_h), ", \"accepted\": ", json_number_array(burn_in_accepted), "},\n")
+        print(io, "  \"provenance\": {\n")
+        print(io, "    \"julia\": {\"version\": \"", Base.VERSION, "\", \"source_commit\": \"", Base.GIT_VERSION_INFO.commit, "\"},\n")
+        print(io, "    \"gaugefields_jl\": {\"package\": \"Gaugefields.jl\", \"version\": \"", VERSION, "\", \"commit\": \"", COMMIT, "\", \"clean\": true},\n")
+        print(io, "    \"latticediracoperators_jl\": {\"package\": \"LatticeDiracOperators.jl\", \"version\": \"", LATTICEDIRACOPERATORS_VERSION, "\", \"commit\": \"", LATTICEDIRACOPERATORS_COMMIT, "\", \"clean\": true},\n")
+        print(io, "    \"wilsonloop_jl\": {\"package\": \"Wilsonloop.jl\", \"version\": \"", WILSONLOOP_VERSION, "\", \"commit\": \"", WILSONLOOP_COMMIT, "\", \"clean\": true},\n")
+        print(io, "    \"qcdmeasurements_jl\": {\"package\": \"QCDMeasurements.jl\", \"version\": \"", QCDMEASUREMENTS_VERSION, "\", \"commit\": \"", QCDMEASUREMENTS_COMMIT, "\", \"clean\": true}\n  },\n")
+        print(io, "  \"source_functions\": [\"StaggeredFermiAction\", \"FermiAction\", \"gauss_sampling_in_action!\", \"sample_pseudofermions!\", \"evaluate_FermiAction\", \"calc_UdSfdU!\", \"shiftedcg\", \"gauss_distribution!\", \"gauss_distribution_fermion!\", \"Staggered_Dirac_operator\", \"solve_DinvX!\", \"GaugeAction\", \"make_loops_fromname\", \"Traceless_antihermitian_add!\", \"exptU!\", \"Random.seed!\", \"rand\", \"QCDMeasurements pion/chiral conventions only\"],\n")
+        print(io, "  \"source_urls\": [\n")
+        urls = [
+            "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/action/StaggeredFermiAction.jl",
+            "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/rhmc/rhmc.jl",
+            "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/Diracoperators.jl",
+            "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/src/AbstractFermions_4D.jl",
+            "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/$LATTICEDIRACOPERATORS_COMMIT/test/wilsonhmc.jl",
+            "https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/action/GaugeActions.jl",
+            "https://github.com/shinaoka/Gaugefields.jl/blob/$COMMIT/src/4D/TA_gaugefields_4D_serial.jl",
+            "https://github.com/akio-tomiya/Wilsonloop.jl/blob/$WILSONLOOP_COMMIT/src/Wilsonloop.jl",
+            "https://github.com/akio-tomiya/QCDMeasurements.jl/blob/$QCDMEASUREMENTS_COMMIT/src/measurements/measure_Pion_correlator.jl",
+            "https://github.com/akio-tomiya/QCDMeasurements.jl/blob/$QCDMEASUREMENTS_COMMIT/src/measurements/measure_chiral_condensate.jl",
+            "https://github.com/JuliaLang/julia/blob/$(Base.GIT_VERSION_INFO.commit)/stdlib/Random/src/Xoshiro.jl",
+        ]
+        for (index, url) in enumerate(urls)
+            index > 1 && print(io, ",\n")
+            print(io, "    \"", url, "\"")
+        end
+        print(io, "\n  ],\n")
+        print(io, "  \"layout\": {\"julia_shape\": \"[3,NX,NY,NZ,NT,1]\", \"rust_shape\": \"[3,1,NX,NY,NZ,NT]\", \"permutation\": [1, 6, 2, 3, 4, 5], \"site_order\": \"x fastest\", \"source_site\": \"(1,1,1,1) Julia / (0,0,0,0) Rust\", \"source_codes\": \"NC*NV canonical codes, color fastest\", \"configuration\": \"Julia and Rust each construct cold_su3 independently\"},\n")
+        print(io, "  \"upstream_issues\": [\n")
+        print(io, "    {\"number\": 27, \"package\": \"LatticeDiracOperators.jl\", \"revision\": \"", LATTICEDIRACOPERATORS_COMMIT, "\", \"function\": \"Z4_distribution_fermi!\", \"detail\": \"The pinned implementation uses theta=rand(0:3)*pi/4 rather than the canonical 2*pi/4 phase grid.\", \"rust_decision\": \"Generate explicit canonical codes and map raw word & 3 to 1,i,-1,-i.\"},\n")
+        print(io, "    {\"number\": 29, \"package\": \"QCDMeasurements.jl\", \"revision\": \"", QCDMEASUREMENTS_COMMIT, "\", \"function\": \"Pion_correlator_measurement\", \"detail\": \"The pinned reconstruction duplicates the source-diagonal value over every sink color/component.\", \"rust_decision\": \"Use all sink colors in the corrected Frobenius contraction and never call high-level pion reconstruction.\"},\n")
+        print(io, "    {\"number\": 30, \"package\": \"LatticeQCD.jl\", \"revision\": \"c09de20aae10f28f6a9c7e84e7711fce94d50915\", \"function\": \"parameter parser/scheduler and Measurement_set\", \"detail\": \"The pinned frontend has parser/scheduler and included-measurement bug candidates.\", \"rust_decision\": \"Own this fixed schedule explicitly in the fixture and integration test; do not use the high-level scheduler.\"}\n")
+        print(io, "  ],\n")
+        print(io, "  \"criterion\": {\"sigma_multiplier\": 6.0, \"formula\": \"abs(mean_rust - mean_julia) <= 6 * sqrt(se_rust^2 + se_julia^2)\", \"standard_error\": \"sample standard deviation of four consecutive block means divided by sqrt(4)\", \"zero_combined_standard_error\": \"combined SE == 0 requires exact zero difference; normalized reporting does not divide by zero\", \"metrics\": [\"pion each temporal timeslice\", \"stochastic chiral scalar\"], \"rust_results_recorded_in_julia_metadata\": false},\n")
+        print(io, "  \"comparison\": {\"gate\": 6.0, \"rust_results_recorded\": false, \"scope\": \"only Julia metadata is generated; Rust independently computes all Rust means, errors, and normalized differences in the integration test\"},\n")
+        print(io, "  \"generator\": {\"script\": \"fixtures/generate.jl\", \"mode\": \"fermion_measurements_phase4_ensemble\", \"julia_version\": \"", Base.VERSION, "\", \"randomness\": \"Julia-only deterministic draws; Rust stream states are predeclared constants, not generated results or configurations\", \"files\": [\"metadata.json\"], \"complete_tree_hash_scope\": \"metadata.json plus every declared file\"}\n")
+        print(io, "}\n")
+    end
+end
+
+if FERMION_MEASUREMENTS_PHASE4_ENSEMBLE_MODE
+    generate_fermion_measurements_phase4_ensemble()
     exit()
 end
 
