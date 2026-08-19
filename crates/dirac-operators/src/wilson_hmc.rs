@@ -325,7 +325,7 @@ fn leapfrog_steps(
     Ok(())
 }
 
-fn add_scaled(
+pub(crate) fn add_scaled(
     momentum: &TaGaugeField,
     force: &TaGaugeField,
     factor: f64,
@@ -378,7 +378,7 @@ fn add_scaled(
     Ok(TaGaugeField::new(tensors, momentum.lattice())?)
 }
 
-fn clone_momentum(momentum: &TaGaugeField) -> Result<TaGaugeField, DiracError> {
+pub(crate) fn clone_momentum(momentum: &TaGaugeField) -> Result<TaGaugeField, DiracError> {
     let tensors = (0..4)
         .map(|mu| {
             momentum.tensors()[mu].duplicate().map_err(|source| {

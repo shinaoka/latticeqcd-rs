@@ -45,11 +45,29 @@
 //! `[2.52706753667624838e-16, 5.23618850174067806e-16,
 //! 3.73441567789983714e-16]` in shift order `[0.31, 0.0, 0.07]`.
 
+//!
+//! Task E also checks an independent short Julia/Rust ensemble: plaquette and
+//! chiral differences are `0.154717` and `0.367498` combined standard errors.
+//! [`StaggeredFermiAction`] follows the pinned v0.6.4 Nf=2 RHMC tables for
+//! refresh, action, and MD force, with scalar 4097-point log-grid errors
+//! `2.505791796281187e-9`, `3.9620045022559225e-9`, and
+//! `1.5595609319518644e-5`. The 68-file `fermions_task_e` fixture matched on
+//! two clean generations at complete-tree hash
+//! `9e166b37d2c138a28f6d75395e11dc8f91f910599f0397e5888bbd738ba6d34a`.
+//! Its all-512 force FD maxima at epsilons `[0.32, 0.16, 0.08, 0.04]` are
+//! `[8.434653210321642e-6, 2.139177378187619e-6, 5.605769951367093e-7,
+//! 1.6563038083509257e-7]`, with pass counts `[291, 442, 510, 512]` and all
+//! coefficients passing at `0.04` below `5e-7`. Deterministic tests cover
+//! refresh/action/force `X_j/Y_j`, U-P-U reversibility, validation and
+//! transactional rollback, rejection rollback, and RNG advancement.
+
 mod boundary;
 mod error;
 mod field;
+mod rhmc;
 mod solvers;
 mod staggered;
+mod staggered_action;
 mod wilson;
 mod wilson_action;
 mod wilson_hmc;
@@ -57,6 +75,9 @@ mod wilson_hmc;
 pub use boundary::FermionBoundary;
 pub use error::{DiracError, SolverError};
 pub use field::FermionField;
+pub use rhmc::{
+    staggered_hmc_update, staggered_leapfrog_trajectory, StaggeredHmcOutcome, StaggeredHmcParams,
+};
 pub use solvers::{
     bicgstab, conjugate_gradient, multi_shift_cg, ConvergenceBranch, MultiShiftSolverReport,
     SolverMethod, SolverParams, SolverReport,
@@ -64,6 +85,7 @@ pub use solvers::{
 pub use staggered::{
     StaggeredAdjoint, StaggeredClosedNormalOperator, StaggeredDirac, StaggeredNormalOperator,
 };
+pub use staggered_action::{StaggeredActionResult, StaggeredFermiAction, StaggeredForceResult};
 pub use wilson::{
     FermionOperator, HermitianPositiveOperator, NormalOperator, WilsonAdjoint, WilsonDirac,
 };

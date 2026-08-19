@@ -404,6 +404,30 @@ field. D, D†, and K payload parity is bit-exact; normal-composition parity is
 (default anti-periodic), K anti-Hermiticity is
 `2.48253415324727312e-16`, and eta/boundary impulse checks are exact.
 
+## Two-flavor staggered RHMC (Phase 3 Task E)
+
+Task E deterministic integration and the independent short ensemble comparison
+are complete. Plaquette and chiral-condensate means differ from Julia by
+`0.154717` and `0.367498` combined standard errors. `StaggeredFermiAction`
+follows the pinned LatticeDiracOperators.jl
+v0.6.4 `StaggeredFermiAction`/`RHMC` path with the exact private Nf=2 degree-15
+`x^(+1/8)` refresh and `x^(-1/8)` action tables and degree-10 `x^(-1/4)`
+force table on `[0.0004,64]`. The scalar 4097-point logarithmic-grid maximum
+absolute errors are `2.505791796281187e-9`, `3.9620045022559225e-9`, and
+`1.5595609319518644e-5` (refresh/action/force). Explicit deterministic `xi`
+refresh, action `X`, force `X_j/Y_j`, and transactional U-P-U trajectory
+payloads are checked against Julia, including validation/error rollback,
+rejection rollback, RNG advancement, and reversibility.
+
+`fixtures/fermions_task_e` contains 68 files (67 declared payloads plus
+metadata); two clean Julia 1.12.5 generations have identical complete-tree
+hash `9e166b37d2c138a28f6d75395e11dc8f91f910599f0397e5888bbd738ba6d34a`.
+The all-512 central force FD contract uses epsilons
+`[0.32,0.16,0.08,0.04]`, maxima
+`[8.434653210321642e-6,2.139177378187619e-6,5.605769951367093e-7,1.6563038083509257e-7]`,
+ratios `[3.9429424115674574,3.816027765580949,3.384505863660601]`, and pass
+counts `[291,442,510,512]`; selected `0.04` passes all `512/512` below `5e-7`.
+
 ## Quenched SU(3) HMC
 
 HMC is a fixed-step, CPU-first SU(3) API. The caller owns the evolution context

@@ -84,6 +84,19 @@ pub enum DiracError {
     NonFiniteMass { found: f64 },
     #[error("staggered mass must be positive, found {found}")]
     NonPositiveMass { found: f64 },
+    #[error("{bound} claimed spectral bound must be finite, found {found}")]
+    NonFiniteSpectralBound { bound: &'static str, found: f64 },
+    #[error("{bound} claimed spectral bound must be positive, found {found}")]
+    NonPositiveSpectralBound { bound: &'static str, found: f64 },
+    #[error("claimed spectral bounds are inverted: lower={lower}, upper={upper}")]
+    InvertedSpectralBounds { lower: f64, upper: f64 },
+    #[error("claimed spectral bounds [{lower}, {upper}] are outside the pinned table interval [{table_lower}, {table_upper}]")]
+    SpectralBoundsOutsideTable {
+        lower: f64,
+        upper: f64,
+        table_lower: f64,
+        table_upper: f64,
+    },
     #[error("Wilson r must be finite, found {found}")]
     NonFiniteWilsonR { found: f64 },
     #[error("only Wilson r=1 is supported, found {found}")]

@@ -1,6 +1,6 @@
 # Phase 3 fermions worklog
 
-Status: Tasks A-D complete; Task E implementation pending
+Status: Tasks A-E complete; integrated Phase 3 verification pending
 
 ## Base and integration state
 
@@ -65,7 +65,7 @@ Suspicions are reproduced before being filed as facts.
 | B: CG and BiCGStab | same, Task B | Correct-to-merge | Correct-to-merge |
 | C: Wilson pseudofermion/HMC | same, Task C | Correct-to-merge | Correct-to-merge |
 | D: staggered/multi-shift CG | same, Task D | Correct-to-merge | Correct-to-merge |
-| E: two-flavor RHMC/integration | same, Task E | Correct-to-merge | pending |
+| E: two-flavor RHMC/integration | same, Task E | Correct-to-merge | Correct-to-merge |
 | Integrated Phase 3 | full design | Correct-to-merge | pending |
 
 `reviewer-flash` completed the pre-implementation review and recorded an
@@ -584,3 +584,127 @@ finding. Three Minor findings were fixed:
 
 Task D focused tests, Clippy, formatting, and diff-check pass after the fixes.
 The delta re-review found no remaining issue and recorded `Correct-to-merge`.
+
+## Task E deterministic finalization evidence
+
+The deterministic RHMC slice and independent short Julia/Rust ensemble are
+implemented and verified; Task E now awaits independent post-review.
+
+The exact pinned Nf=2 tables are represented with `f64::from_bits`: degree 15
+`x^(+1/8)` refresh, degree 15 `x^(-1/8)` action, and degree 10 `x^(-1/4)`
+MD-force inverse residues on `[0.0004, 64]`. Unit tests assert every alpha and
+beta bit, while the fixture test consumes the complete metadata table. The
+4097-point logarithmic-grid maximum absolute errors are:
+
+```text
+refresh  2.505791796281187e-9
+action   3.9620045022559225e-9
+MD force 1.5595609319518644e-5
+```
+
+The public deterministic refresh path applies the pinned rational to an
+explicit `xi`; action evaluates `X=R_(-1/8)(M)`; force compares every
+Julia-parallel `X_j=(M+beta_j I)^-1 phi` and `Y_j=D X_j`. Report metadata,
+field payloads, source/layout/provenance metadata, and all declared payload
+names are asserted. RHMC U-P-U uses private link/momentum proposals, validates
+before mutation, rolls back on validation and post-update solver errors, rolls
+back links on rejection, and leaves consumed RNG words consumed. Focused tests
+cover rejection rollback/RNG advancement and forward/reverse reversibility.
+
+The all-512 central force FD contract is preserved exactly:
+
+```text
+epsilons    [0.32, 0.16, 0.08, 0.04]
+max errors  [8.434653210321642e-6, 2.139177378187619e-6,
+             5.605769951367093e-7, 1.6563038083509257e-7]
+ratios      [3.9429424115674574, 3.816027765580949, 3.384505863660601]
+pass count  [291, 442, 510, 512]
+selected    0.04; 512/512 below 5e-7
+```
+
+`fixtures/fermions_task_e` contains 68 files (67 declared payloads plus
+metadata). Two clean Julia 1.12.5 generations were byte-identical, with
+complete-tree hash
+`9e166b37d2c138a28f6d75395e11dc8f91f910599f0397e5888bbd738ba6d34a`.
+
+### Task E verification gates
+
+- Focused deterministic Task E tests, including all-512 force FD:
+  `cargo test -p dirac-operators --test task_e --test task_e_fixture --
+  --nocapture` — PASS, 7 tests.
+- `cargo fmt --all` and `cargo fmt --all -- --check` — PASS.
+- `cargo check --workspace` — PASS.
+- `cargo test --workspace` — PASS, 256 passed and 1 ignored after the
+  ensemble integration test.
+- `cargo test --workspace --all-features` — PASS, 266 passed and 1 ignored.
+- `cargo test --doc --workspace --all-features` — PASS, 63 doctests.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` — PASS.
+- `cargo doc --workspace --all-features --no-deps` — PASS.
+- All five existing examples with `--all-features` — PASS.
+- `git diff --check`, exact five-manifest/nine-lockline tenferro pin,
+  stale-symbol/scope, four MIT license files, clean three-reference-checkout
+  provenance, and complete fixture metadata/file audits — PASS.
+
+### Independent Julia/Rust ensemble
+
+The metadata-only Julia fixture `fixtures/fermions_task_e_ensemble` was generated
+twice in 15.38 and 15.28 seconds with byte-identical SHA-256
+`1467768f1798f8b9662d0419bf49009bf64921cc97b9581968d36f3c1c53d2cf`.
+Both languages use the same cold `2^4`, beta `5.7`, mass `0.17`, Nf=2,
+`dt=0.001`, two-step schedule, four burn-in trajectories, then three blocks of
+four measured trajectories. Their HMC and measurement RNG streams are explicit
+and independent.
+
+Julia block results were:
+
+```text
+plaquette [0.9999310091, 0.9998880612, 0.9998363070]
+           mean 0.9998851258, SE 2.73775e-5
+chiral    [0.2478494979, 0.2476694079, 0.2477546679]
+           mean 0.2477578579, SE 5.20120e-5
+mean delta-H -1.59564e-8; acceptance 12/12
+```
+
+Rust used a separately owned canonical Z4 source stream and produced:
+
+```text
+plaquette [0.9999326182, 0.9998963669, 0.9998438435]
+           mean 0.9998909429, SE 2.57702e-5
+chiral    [0.2477514929, 0.2479892078, 0.2473041694]
+           mean 0.2476816234, SE 2.00816e-4
+mean delta-H -4.36219e-8; acceptance 12/12
+```
+
+The differences are `0.154717` combined standard errors for plaquette and
+`0.367498` for chiral, both below the fixed six-combined-SE criterion. The
+Rust ensemble integration test runs in about 1.03 seconds and passed in both
+final workspace matrices. Mean
+delta-H and acceptance are reported without pass thresholds. The estimator is
+`(Nf/4) Re(r†D^-1r)/NV`; metadata records all schedule, block, source, seed,
+normalization, provenance, and per-measurement values.
+
+The pinned Julia `Z4_distribution_fermi!` uses `theta=k*pi/4` instead of the
+canonical `k*pi/2` grid. This confirmed upstream defect is recorded as Rust
+Issue #27. Neither implementation copies it for this comparison: both use
+canonical Z4 with independently seeded streams, and Rust exposes no
+compatibility API.
+
+Known risks are limited to the caller's spectral-bound assertion and the
+pinned rational approximation outside the checked scalar grid; no runtime
+spectrum estimator or coefficient generator was added. No commit, push, branch,
+or reference checkout was modified.
+
+### Task E post-review findings
+
+`reviewer-flash` recorded `Correct-to-merge` with no production defect and two
+Minor findings. Both are fixed:
+
+- the Julia ensemble now avoids the biased pinned pi/4 source and implements
+  canonical Z4 explicitly. Julia and Rust therefore estimate the same chiral
+  quantity with independent streams; the regenerated fixture hash is
+  `1467768f...c53d2cf` and the chiral difference is `0.367498` combined SE;
+- scalar approximation maxima retain exact coefficient-bit contracts but use a
+  four-ULP portability bound for libm-dependent `powf` evaluation.
+
+Focused ensemble and scalar-grid tests pass after these fixes. The delta
+re-review found no remaining issue and recorded `Correct-to-merge`.

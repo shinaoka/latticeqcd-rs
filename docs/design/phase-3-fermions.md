@@ -1,6 +1,6 @@
 # Phase 3 fermions
 
-Status: approved; Tasks A-D complete, Task E pending
+Status: approved; Tasks A-E complete, integrated verification pending
 
 ## Goal
 
@@ -410,6 +410,14 @@ section of this document has a `Correct-to-merge` pre-review verdict.
    - rational scalar errors, Julia fixed trajectory, reversibility, and short
      ensemble comparison.
 
+   The exact Nf=2 coefficient bit tables, 4097-point scalar log-grid errors,
+   explicit refresh/action/force `X_j/Y_j`, transactional U-P-U,
+   validation/error and rejection rollback, RNG advancement, and reversibility
+   are covered by `fixtures/fermions_task_e`. The independent short ensemble is
+   recorded in `fixtures/fermions_task_e_ensemble`; plaquette and chiral means
+   differ by `0.154717` and `0.367498` combined standard errors, below the fixed
+   six-standard-error criterion.
+
 Every task receives a full-diff post-review by `reviewer-flash`; findings are
 fixed and re-reviewed before the task commit. The final integrated branch gets
 one additional full review.
@@ -490,6 +498,20 @@ with `512/512` coefficients passing at `5e-4` and ratios
 - independent short Julia/Rust ensembles on the same small lattice; plaquette
   and chiral condensate agree within six combined standard errors, and mean
   delta-H/acceptance are reported without a hidden pass criterion.
+
+Deterministic finalization evidence: `fermions_task_e` has 68 files (67
+payloads plus metadata), and two clean generations have complete-tree hash
+`9e166b37d2c138a28f6d75395e11dc8f91f910599f0397e5888bbd738ba6d34a`. The
+refresh/action/MD-force scalar errors on the exact 4097-point log grid are
+`2.505791796281187e-9`, `3.9620045022559225e-9`, and
+`1.5595609319518644e-5`. The established force FD series at epsilons
+`[0.32,0.16,0.08,0.04]` has maxima
+`[8.434653210321642e-6,2.139177378187619e-6,5.605769951367093e-7,1.6563038083509257e-7]`,
+ratios `[3.9429424115674574,3.816027765580949,3.384505863660601]`, and pass
+counts `[291,442,510,512]`; selected `0.04` passes all `512/512` below `5e-7`.
+The independent ensemble uses four burn-in and twelve measured trajectories in
+three blocks; its metadata records both independent RNG policies, all block
+means, standard errors, mean delta-H, acceptance, and Issue #27 provenance.
 
 The staggered chiral condensate follows pinned QCDMeasurements.jl exactly. For
 one Z4 noise vector `r`, it is

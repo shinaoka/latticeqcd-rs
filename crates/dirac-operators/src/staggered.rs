@@ -115,6 +115,10 @@ impl<'a> StaggeredDirac<'a> {
         self.boundary
     }
 
+    pub(crate) fn host_links(&self) -> &HostGaugeLinks<'a> {
+        &self.links
+    }
+
     /// Return a borrowed `D† = mass I - K` view.
     pub fn adjoint(&self) -> StaggeredAdjoint<'_, 'a> {
         StaggeredAdjoint { parent: self }
@@ -332,7 +336,7 @@ impl<'a> StaggeredDirac<'a> {
     // `StaggeredFermion_4D_nowing.jl` at the pinned revision. Gaugefield
     // periodicity is supplied by `HostGaugeLinks`; this helper adds the
     // fermion sign exactly once for a wrapped one-hop displacement.
-    fn neighbor(
+    pub(crate) fn neighbor(
         &self,
         site: usize,
         direction: usize,
@@ -629,7 +633,7 @@ fn validate_mass(mass: f64) -> Result<(), DiracError> {
     Ok(())
 }
 
-fn staggered_eta(direction: usize, coordinates: [usize; 4]) -> i8 {
+pub(crate) fn staggered_eta(direction: usize, coordinates: [usize; 4]) -> i8 {
     let count = match direction {
         0 => 0,
         1 => 1,
