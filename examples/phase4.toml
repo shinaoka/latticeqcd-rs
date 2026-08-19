@@ -1,0 +1,33 @@
+schema_version = 1
+
+[physical]
+lattice = [2, 2, 2, 2]
+beta = 5.7
+
+[initial]
+kind = "cold"
+
+[fermions]
+kind = "quenched"
+
+[update]
+kind = "hmc"
+step_size = 0.0001
+steps = 1
+
+[rng]
+state_hex = ["0000000000000001", "0000000000000002", "0000000000000003", "0000000000000004"]
+
+[control]
+first_trajectory = 1
+trajectories = 1
+thermalization = 0
+measure_initial = false
+
+[[measurements]]
+every = 1
+kind = "plaquette"
+
+[[measurements]]
+every = 1
+kind = "polyakov_loop"

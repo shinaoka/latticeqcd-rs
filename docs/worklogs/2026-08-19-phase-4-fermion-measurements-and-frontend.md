@@ -38,7 +38,7 @@ No upstream submission is authorized or performed.
 | Task | Design review | Implementation review | Delta review |
 |---|---|---|---|
 | A: fermion measurements | round 1 `Correct-to-merge` | full diff `Correct-to-merge` | two delta rounds `Correct-to-merge` |
-| B: `latticeqcd` frontend | round 2 `Correct-to-merge` | pending | pending |
+| B: `latticeqcd` frontend | round 2 `Correct-to-merge` | full diff `Correct-to-merge` | delta `Correct-to-merge` |
 | C: integrated evidence/docs | round 2 `Correct-to-merge` | pending | pending |
 | Integrated diff | n/a | pending | pending |
 
@@ -81,3 +81,33 @@ Focused gates:
 Task A post-implementation full-diff review returned `Correct-to-merge`.
 Three Minor fixture/test findings were fixed; both delta reviews returned
 `Correct-to-merge`, including the final all-pairs/global-Z4-phase coverage.
+
+## Task B acceptance continuation
+
+The existing frontend was continued without changing Task A/C numerical code.
+The runner now records the validated lattice and initial RNG words, boxes the
+large failure payloads, dispatches heatbath/Wilson/staggered updates with exact
+`UpdateKind` records, classifies HMC/chiral validation failures separately, and
+publishes zero-padded ILDG names through a no-clobber hard-link plus cleanup
+path. Acceptance tests cover execution dispatch, initial/thermalization
+scheduling, chiral RNG ordering, wrong-lattice ILDG input, and destination
+preservation with no temporary-file residue. The checked binary configuration
+is `examples/phase4.toml`.
+
+The focused RED test run failed at compile time with the expected missing
+report fields, typed variants, and heatbath kind. After the minimal fixes,
+`cargo test -p latticeqcd` passed 24 tests (17 integration tests and 7
+frontend doctests), and the exact binary command printed:
+
+```text
+completed_updates=1 accepted=1 rejected=0 measurements=2 flows=0 outputs=0
+```
+
+Task-local verification passed: formatting, latticeqcd check/test/clippy,
+latticeqcd doctests, measurements no-default-features check, binary smoke,
+workspace check/test/all-features test/workspace doctests/docs, both existing
+traced/fermion examples, exact tenferro-pin/stale-symbol checks, and
+`git diff --check`. The Task B full-diff review returned `Correct-to-merge`.
+Five Minor strictness/coverage/cleanup/documentation findings were fixed, and
+the delta review returned `Correct-to-merge`. No commit or push was made;
+Task C and integrated review remain pending.
