@@ -1,6 +1,6 @@
 # Phase 3 fermions
 
-Status: approved; Tasks A-E complete, integrated verification pending
+Status: Tasks A-E and integrated review complete; PR pending
 
 ## Goal
 
@@ -365,7 +365,7 @@ section of this document has a `Correct-to-merge` pre-review verdict.
    - crate, errors, field/boundary contracts, gamma/projector kernels,
      `D`, `D†`, and `D†D`;
    - Julia impulse/full-field fixture, adjoint and gamma5 identities.
-2. **Task B: Krylov solvers** *(complete; post-review pending)*
+2. **Task B: Krylov solvers** *(complete; Correct-to-merge)*
    - CG and BiCGStab, reports, transactional output;
    - dense/small-lattice Julia solutions, true residuals and breakdown tests;
    - `fixtures/fermions_task_b` maps Julia `cg`/`bicgstab` to the Rust
@@ -373,7 +373,7 @@ section of this document has a `Correct-to-merge` pre-review verdict.
 3. **Task C: Wilson pseudofermions and HMC**
    - refresh, action, analytic force, combined leapfrog and Metropolis;
    - Julia action/force/one-trajectory comparison and finite differences.
-4. **Task D: staggered operator and multi-shift CG** *(implementation complete; post-review pending)*
+4. **Task D: staggered operator and multi-shift CG** *(complete; Correct-to-merge)*
    - `Staggered_Dirac_operator`/`Dx!` → `StaggeredDirac`, adjoint →
      `StaggeredAdjoint`, `DdagD_Staggered_operator` →
      `StaggeredNormalOperator`, closed `mass² I-K²` →
@@ -441,7 +441,7 @@ cross-language bitwise RNG parity.
 - independent impulse stencil, adjoint inner-product residual, gamma5
   hermiticity, and cold plane-wave checks within `2e-12`.
 
-### Task B *(complete; post-review pending)*
+### Task B *(complete; Correct-to-merge)*
 
 - CG on `D†D` and BiCGStab on `D`, both zero and nonzero initial guesses,
 - solution max residual against Julia within `2e-11`,

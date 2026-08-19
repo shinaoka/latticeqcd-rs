@@ -1,6 +1,6 @@
 # Phase 3 fermions worklog
 
-Status: Tasks A-E complete; integrated Phase 3 verification pending
+Status: Tasks A-E and integrated review complete; PR pending
 
 ## Base and integration state
 
@@ -66,7 +66,7 @@ Suspicions are reproduced before being filed as facts.
 | C: Wilson pseudofermion/HMC | same, Task C | Correct-to-merge | Correct-to-merge |
 | D: staggered/multi-shift CG | same, Task D | Correct-to-merge | Correct-to-merge |
 | E: two-flavor RHMC/integration | same, Task E | Correct-to-merge | Correct-to-merge |
-| Integrated Phase 3 | full design | Correct-to-merge | pending |
+| Integrated Phase 3 | full design | Correct-to-merge | Correct-to-merge |
 
 `reviewer-flash` completed the pre-implementation review and recorded an
 overall `Correct-to-merge`, with separate `Correct-to-merge` verdicts for Tasks
@@ -95,7 +95,7 @@ The first Task A executor timed out before verification. It left an uncommitted
 crate/generator/fixture draft; the last reported blocker was a Clippy
 `needless_range_loop` finding in the file now named `wilson.rs`. This continuation
 audited that draft, fixed the lint and normal-operator transactionality, and
-completed the evidence below. The independent Task A post-review remains pending.
+completed the evidence below. Task A subsequently received `Correct-to-merge`.
 
 ## Task A completion evidence
 
@@ -448,7 +448,7 @@ focused delta re-review found no remaining issue and recorded
 
 ### Julia-parallel mapping and scope
 
-Task D is implementation-complete; independent post-review remains pending.
+Task D is implementation-complete and independently post-reviewed.
 The Rust path stays parallel to the pinned LatticeDiracOperators.jl v0.6.4
 sources: `Staggered_Dirac_operator`/`Dx!` map to `StaggeredDirac`, its adjoint
 maps to `StaggeredAdjoint`, `DdagD_Staggered_operator` maps to
@@ -588,7 +588,7 @@ The delta re-review found no remaining issue and recorded `Correct-to-merge`.
 ## Task E deterministic finalization evidence
 
 The deterministic RHMC slice and independent short Julia/Rust ensemble are
-implemented and verified; Task E now awaits independent post-review.
+implemented, verified, and independently post-reviewed.
 
 The exact pinned Nf=2 tables are represented with `f64::from_bits`: degree 15
 `x^(+1/8)` refresh, degree 15 `x^(-1/8)` action, and degree 10 `x^(-1/4)`
@@ -693,6 +693,53 @@ Known risks are limited to the caller's spectral-bound assertion and the
 pinned rational approximation outside the checked scalar grid; no runtime
 spectrum estimator or coefficient generator was added. No commit, push, branch,
 or reference checkout was modified.
+
+## Integrated Phase 3 verification
+
+The final branch is based directly on Phase 2 merge commit
+`eb66f34d5fc25da2f163f1005a8c632492572d28` and is 0 behind / 6 commits ahead
+of `origin/main` before the final integration-evidence commit.
+
+Every Phase 3 Julia mode was regenerated twice from clean pinned checkouts.
+Using one common sorted file-content aggregation command, both runs matched:
+
+```text
+fermions_task_a          a865e5f444062b11025ed0cecc5481ed9dc0a2cf522fbc13cac785c492ed9b3b
+fermions_task_b          91aa615fb22d1558224e469e12a713315b840edf14d7d037e44dd0239c155d14
+fermions_task_c          9462c1e4bf1f46c0929c81fd932f65dbd20f2a2b65168bb65ad8e8a4d92439af
+fermions_task_d          baafa16e2cbdf0d9de96c027566886f27918cdff67a73a052bcb48323a79d985
+fermions_task_e          14179c53f20d68fb473dd4e127a42a54ce601c92784a8b567aabd8cce5b3c468
+fermions_task_e_ensemble 0c50e60697acefff3d6f4fc98d2a660b07826635c596dd899986e4caedf9daae
+```
+
+These integration hashes use the same command for all modes; earlier task-local
+hashes used their recorded task-local aggregation commands. File-by-file
+comparisons are empty in every mode.
+
+After deleting 20.4 GiB of prior target artifacts, the complete final tree was
+rebuilt from an empty target. Fresh results:
+
+```text
+cargo fmt --all -- --check                         PASS
+cargo check --workspace                            PASS
+cargo test --workspace                             PASS (256 passed, 1 ignored)
+cargo test --workspace --all-features              PASS (266 passed, 1 ignored)
+cargo test --doc --workspace --all-features        PASS (63 passed)
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+                                                     PASS
+cargo doc --workspace --all-features --no-deps     PASS
+```
+
+Six examples ran successfully with `--all-features`, including the new
+`dirac-operators/examples/fermions.rs` Wilson/staggered/RHMC smoke example.
+`git diff --check`, exact tenferro pin (five manifest declarations and nine
+lockfile source lines), stale-symbol, unsafe, dependency, MIT license,
+provenance, known-defect issue, scope, and clean-reference-checkout audits
+passed. `rand_chacha` is absent. Rebuilt target size is 18 GiB and is removed
+after hosted verification because it is entirely reproducible.
+
+The integrated full-diff review found no code defect and recorded
+`Correct-to-merge`. Hosted PR CI remains pending.
 
 ### Task E post-review findings
 

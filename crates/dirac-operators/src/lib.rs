@@ -25,8 +25,8 @@
 //! `[5.005235745869641e-7, 1.262665048074041e-7, 3.463491360378157e-8]` at
 //! epsilons `[1e-3, 5e-4, 2.5e-4]`.
 //!
-//! Task D is implementation-complete; independent post-review remains
-//! pending. It keeps the pinned staggered `Staggered_Dirac_operator`/`Dx!`,
+//! Task D is implementation-complete and independently post-reviewed. It
+//! keeps the pinned staggered `Staggered_Dirac_operator`/`Dx!`,
 //! adjoint, composed `DdagD_Staggered_operator`, and `shiftedcg` entrypoints
 //! in [`StaggeredDirac`], [`StaggeredNormalOperator`], and [`multi_shift_cg`].
 //! The independently lowered [`StaggeredClosedNormalOperator`] checks

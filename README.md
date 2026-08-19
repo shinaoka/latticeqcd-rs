@@ -16,6 +16,11 @@ the MIT License; its applicable notice is preserved in
 crate follows the Polyakov and clover conventions of
 [QCDMeasurements.jl](https://github.com/akio-tomiya/QCDMeasurements.jl); its notice
 is preserved in [`crates/measurements/LICENSE`](crates/measurements/LICENSE).
+The `dirac-operators` crate follows Wilson/staggered fermion, solver,
+pseudofermion-force, and RHMC conventions from
+[LatticeDiracOperators.jl](https://github.com/akio-tomiya/LatticeDiracOperators.jl),
+also MIT-licensed; its notice is preserved in
+[`crates/dirac-operators/LICENSE`](crates/dirac-operators/LICENSE).
 
 ## Signed Wilson paths and loop actions
 
@@ -274,7 +279,7 @@ schedule, and the fixed six-standard-error comparison criterion. See
 
 ## Wilson Krylov solvers (Phase 3 Task B)
 
-Task B is complete; independent post-review remains pending. The
+Task B is complete and independently post-reviewed. The
 `dirac-operators` crate exposes checked, host-resident `conjugate_gradient`
 for the minimal `HermitianPositiveOperator` contract (currently
 `NormalOperator = D†D`) and `bicgstab` for the existing general
@@ -319,7 +324,7 @@ momentum only after the complete trajectory succeeds; rejection and errors leave
 caller-owned fields unchanged. The fixed Julia action/X/Y/force/trajectory
 oracle is [`fixtures/fermions_task_c`](fixtures/fermions_task_c), generated
 against LatticeDiracOperators.jl v0.6.4 and Gaugefields.jl v0.7.2. Task C is
-implementation-complete; independent post-review remains pending.
+implementation-complete and independently post-reviewed.
 
 Regenerate it twice from the clean external project and verify the complete-tree
 hashes:
@@ -355,7 +360,7 @@ and `3.645642262945268`.
 
 ## One-link staggered fermions and multi-shift CG (Phase 3 Task D)
 
-Task D is implementation-complete; independent post-review remains pending.
+Task D is implementation-complete and independently post-reviewed.
 `StaggeredDirac` maps the pinned LatticeDiracOperators.jl v0.6.4
 `Staggered_Dirac_operator`/`Dx!` path, `StaggeredAdjoint` maps its adjoint,
 `StaggeredNormalOperator` composes `D†D`, and
@@ -427,6 +432,11 @@ The all-512 central force FD contract uses epsilons
 `[8.434653210321642e-6,2.139177378187619e-6,5.605769951367093e-7,1.6563038083509257e-7]`,
 ratios `[3.9429424115674574,3.816027765580949,3.384505863660601]`, and pass
 counts `[291,442,510,512]`; selected `0.04` passes all `512/512` below `5e-7`.
+Run the checked Wilson/staggered/RHMC smoke example with:
+
+```text
+cargo run -p dirac-operators --example fermions --all-features
+```
 
 ## Quenched SU(3) HMC
 
