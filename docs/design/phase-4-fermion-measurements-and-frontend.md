@@ -114,9 +114,11 @@ Each source is canonical Z4 `{1, i, -1, -i}` generated from the caller-owned
 storage order. The mapping is fixed: `k = word & 3`, then
 `[1, i, -1, -i][k]`. This intentionally does not reproduce Issue #27's
 `k*pi/4` noise. Julia's native draw loop shares this physical order only for a
-one-component staggered field; deterministic fixtures therefore store explicit
-codes per `(color, component, site)` and never rely on matched cross-language
-seeds. For each source, solve `D p = r` from zero and accumulate
+one-component staggered field. The deterministic staggered fixture records both
+the fixed Xoshiro state and every generated code: Julia applies the explicit
+codes without calling its buggy high-level noise routine, while Rust replays the
+state to exercise the public RNG path and verifies the stored codes. For each
+source, solve `D p = r` from zero and accumulate
 `Re(r†p)`. Return:
 
 ```text

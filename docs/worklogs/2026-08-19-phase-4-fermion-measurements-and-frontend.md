@@ -37,7 +37,7 @@ No upstream submission is authorized or performed.
 
 | Task | Design review | Implementation review | Delta review |
 |---|---|---|---|
-| A: fermion measurements | round 1 `Correct-to-merge` | pending | pending |
+| A: fermion measurements | round 1 `Correct-to-merge` | full diff `Correct-to-merge` | two delta rounds `Correct-to-merge` |
 | B: `latticeqcd` frontend | round 2 `Correct-to-merge` | pending | pending |
 | C: integrated evidence/docs | round 2 `Correct-to-merge` | pending | pending |
 | Integrated diff | n/a | pending | pending |
@@ -52,6 +52,32 @@ schedule/criterion. Round 2 found no blocking issues and returned overall
 Reviewer: `reviewer-flash` (read-only, different model family from the planned
 `luna-implementer`).
 
-## Verification evidence
+## Task A verification evidence
 
-Pending implementation.
+- deterministic fixture generated twice from clean pinned checkouts with Julia
+  1.12.5; both complete trees SHA256:
+  `55ee3a86d2b8d6ef4497c05a5539e5daa53ace71b147382e4e951ef21d570f18`;
+- 89 declared payloads exactly matched the 89 non-metadata files;
+- maximum Wilson solution error: `5.551792708129603e-17`;
+- maximum staggered point-source solution error: `3.351599329828878e-13`;
+- maximum staggered chiral solution error: `4.139010604214116e-13`;
+- corrected pion error: Wilson `5.551115123125783e-17`, staggered
+  `8.12128142513302e-14`;
+- chiral per-source scalar error: `8.526512829121202e-14`;
+- final chiral scalar error: `3.885780586188048e-16`;
+- all values remained below the predeclared `2e-12` absolute and `2e-10`
+  relative gates; fresh relative residuals remained below `1e-11`.
+
+Focused gates:
+
+- `cargo check -p measurements --no-default-features`: pass;
+- `cargo check -p measurements --all-features`: pass;
+- `cargo test -p dirac-operators`: 73 passed;
+- `cargo test -p measurements --all-features`: 24 passed;
+- `cargo clippy -p dirac-operators -p measurements --all-targets --all-features -- -D warnings`: pass;
+- `cargo test --doc -p dirac-operators -p measurements --all-features`: 29 passed;
+- `cargo fmt --all -- --check` and `git diff --check`: pass.
+
+Task A post-implementation full-diff review returned `Correct-to-merge`.
+Three Minor fixture/test findings were fixed; both delta reviews returned
+`Correct-to-merge`, including the final all-pairs/global-Z4-phase coverage.

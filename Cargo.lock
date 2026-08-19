@@ -586,11 +586,14 @@ dependencies = [
 name = "measurements"
 version = "0.1.0"
 dependencies = [
+ "dirac-operators",
  "gaugefields",
  "npyz",
  "num-complex",
+ "rand",
  "serde_json",
  "tenferro-cpu",
+ "tenferro-tensor",
  "thiserror 2.0.20",
  "wilsonloop",
 ]

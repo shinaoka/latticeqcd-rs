@@ -9,6 +9,8 @@
 //! signed-link convention. The implementation reuses `HostGaugeLinks` and
 //! `Mat3`; it does not copy tensor storage or introduce a second path engine.
 
+#[cfg(feature = "fermions")]
+pub mod fermions;
 mod gradient_flow;
 
 use gaugefields::{site_index, GaugeLinks, HostGaugeLinks, Mat3};
