@@ -1,0 +1,38 @@
+{
+  "schema": "fermions_task_a.v1",
+  "lattice": [2, 2, 2, 2],
+  "nc": 3,
+  "components": 4,
+  "kappa": 0.13,
+  "r": 1.0,
+  "boundaries": {"periodic": [1, 1, 1, 1], "antiperiodic": [1, 1, 1, -1]},
+  "gaugefields_jl": {"package": "Gaugefields.jl", "version": "0.7.2", "commit": "9e5719970770f4497405a856315c90bef7f74449", "clean": true},
+  "latticediracoperators_jl": {"package": "LatticeDiracOperators.jl", "version": "0.6.4", "commit": "bdef628184597815ba3e0cddf2536df767e78a02", "clean": true},
+  "source_urls": [
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/AbstractGaugefields.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/4D/nowing/gaugefields_4D_nowing.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/AbstractFermions_4D.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/Diracoperators.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/WilsonFermion/WilsonFermion.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/WilsonFermion/WilsonFermion_4D.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/WilsonFermion/WilsonFermion_4D_nowing.jl"
+  ],
+  "source_functions": ["Initialize_Gaugefields", "mk_gamma", "Wilson_Dirac_operator", "shift_fermion", "shifted_fermion!", "Wx!", "Wdagx_noclover!", "DdagD_Wilson_operator", "LinearAlgebra.mul!", "LinearAlgebra.dot", "mul_γ5x!"],
+  "entrypoint_map": [
+    {"julia": "Initialize_Gaugefields", "julia_source": "Gaugefields.jl/src/AbstractGaugefields.jl", "rust": "fermions_task_a_links + GaugeLinks::host_view"},
+    {"julia": "mk_gamma", "julia_source": "src/WilsonFermion/WilsonFermion.jl", "rust": "wilson.rs::GAMMA + project_spin"},
+    {"julia": "Wilson_Dirac_operator", "julia_source": "src/WilsonFermion/WilsonFermion.jl", "rust": "WilsonDirac::with_boundary"},
+    {"julia": "shift_fermion/shifted_fermion!", "julia_source": "src/WilsonFermion/WilsonFermion_4D_nowing.jl", "rust": "WilsonDirac::neighbor"},
+    {"julia": "Wx!", "julia_source": "src/WilsonFermion/WilsonFermion.jl", "rust": "FermionOperator for WilsonDirac::apply_into"},
+    {"julia": "Wdagx_noclover!", "julia_source": "src/WilsonFermion/WilsonFermion.jl", "rust": "FermionOperator for WilsonAdjoint::apply_into"},
+    {"julia": "DdagD_Wilson_operator + LinearAlgebra.mul!", "julia_source": "src/WilsonFermion/WilsonFermion.jl + src/Diracoperators.jl", "rust": "NormalOperator::apply_into"},
+    {"julia": "LinearAlgebra.dot", "julia_source": "src/AbstractFermions_4D.jl", "rust": "FermionField::inner_product"},
+    {"julia": "mul_γ5x!", "julia_source": "src/WilsonFermion/WilsonFermion_4D_nowing.jl", "rust": "FermionField::gamma5"}
+  ],
+  "construction": "explicit diagonal SU(3) links and spinor values from fixed formulas; no RNG or global random state",
+  "layout": {"julia_shape": "[3,NX,NY,NZ,NT,4]", "rust_shape": "[3,4,NX,NY,NZ,NT]", "julia_input": "ComplexF64 Fortran [color,x,y,z,t,spin]", "rust_input_and_outputs": "Complex64 column-major [color,spin,x,y,z,t]", "conversion": "permutedims(input, (1, 6, 2, 3, 4, 5)); the same explicit transpose is applied to every output", "permutation": [1, 6, 2, 3, 4, 5], "site_order": "x fastest"},
+  "gamma": "Euclidean chiral basis from mk_gamma; gamma5=diag(-1,-1,+1,+1)",
+  "files": ["u0.npy", "u1.npy", "u2.npy", "u3.npy", "input_julia.npy", "input_rust.npy", "d_periodic_julia.npy", "d_periodic_rust.npy", "ddag_periodic_julia.npy", "ddag_periodic_rust.npy", "ddagd_periodic_julia.npy", "ddagd_periodic_rust.npy", "d_antiperiodic_julia.npy", "d_antiperiodic_rust.npy", "ddag_antiperiodic_julia.npy", "ddag_antiperiodic_rust.npy", "ddagd_antiperiodic_julia.npy", "ddagd_antiperiodic_rust.npy"],
+  "comparison": {"component_max_abs_tolerance": 2e-12, "criterion": "maximum absolute complex-component residual over every color, component, and site"},
+  "generator": {"script": "fixtures/generate.jl", "mode": "fermions_task_a", "randomness": "none"}
+}

@@ -155,6 +155,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "930c7171c8df9fb1782bdf9b918ed9ed2d33d1d22300abb754f9085bc48bf8e8"
 
 [[package]]
+name = "dirac-operators"
+version = "0.1.0"
+dependencies = [
+ "gaugefields",
+ "npyz",
+ "num-complex",
+ "rand",
+ "serde_json",
+ "tenferro-cpu",
+ "tenferro-tensor",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "dyn-stack"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

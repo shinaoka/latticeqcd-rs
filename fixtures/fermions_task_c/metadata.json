@@ -1,0 +1,38 @@
+{
+  "schema": "fermions_task_c.v1",
+  "lattice": [2, 2, 2, 2],
+  "nc": 3,
+  "components": 4,
+  "beta": 5.7,
+  "kappa": 0.13,
+  "r": 1.0,
+  "boundaries": [1, 1, 1, -1],
+  "solver_parameters": {"tolerance": 1.0e-20, "max_iterations": 2000, "julia_operator_keys": ["Dirac_operator", "κ", "r", "faster version", "verbose_level", "boundarycondition", "method_CG", "eps_CG", "MaxCGstep"], "julia_solver_keywords": ["eps", "maxsteps", "verbose"]},
+  "gaugefields_jl": {"package": "Gaugefields.jl", "version": "0.7.2", "commit": "9e5719970770f4497405a856315c90bef7f74449", "clean": true},
+  "latticediracoperators_jl": {"package": "LatticeDiracOperators.jl", "version": "0.6.4", "commit": "bdef628184597815ba3e0cddf2536df767e78a02", "clean": true},
+  "source_urls": [
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/action/WilsonFermiAction.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/test/wilsonhmc.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/WilsonFermion/WilsonFermion.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/4D/TA_gaugefields_4D_serial.jl"
+  ],
+  "source_functions": ["sample_pseudofermions!", "evaluate_FermiAction", "calc_UdSfdU!", "calc_UdSfdU_fromX!", "MDstep!", "U_update!", "P_update!", "P_update_fermion!", "Traceless_antihermitian_add!"],
+  "entrypoint_map": [
+    {"julia": "sample_pseudofermions!", "julia_source": "src/action/WilsonFermiAction.jl:362-377", "rust": "WilsonFermiAction::sample_pseudofermion"},
+    {"julia": "evaluate_FermiAction", "julia_source": "src/action/WilsonFermiAction.jl:86-97", "rust": "WilsonFermiAction::evaluate"},
+    {"julia": "calc_UdSfdU!", "julia_source": "src/action/WilsonFermiAction.jl:99-136", "rust": "WilsonFermiAction::force"},
+    {"julia": "calc_UdSfdU_fromX!", "julia_source": "src/action/WilsonFermiAction.jl:138-234", "rust": "wilson_action.rs::force_from_x"},
+    {"julia": "MDstep!/U_update!/P_update!/P_update_fermion!", "julia_source": "test/wilsonhmc.jl:46-146", "rust": "wilson_hmc.rs::wilson_hmc_update"},
+    {"julia": "Traceless_antihermitian_add!", "julia_source": "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/4D/TA_gaugefields_4D_serial.jl:181-269", "rust": "Mat3::add_ta_coefficients"}
+  ],
+  "layout": {"julia_shape": "[3,NX,NY,NZ,NT,4]", "rust_shape": "[3,4,NX,NY,NZ,NT]", "conversion": "permutedims(array, (1, 6, 2, 3, 4, 5))", "permutation": [1, 6, 2, 3, 4, 5], "site_order": "x fastest"},
+  "construction": "explicit diagonal SU(3) links, fixed xi, phi, and coefficient-space momentum; no global RNG; the acceptance draw uses explicit Julia Xoshiro state",
+  "pseudofermion_refresh": {"flavors": 2, "formula": "phi = D† xi", "complex_normal_scale": "1/sqrt(2) per independent real and imaginary standard normal", "fixture_xi": "fixed array; sampler parity is checked separately in Rust"},
+  "force_convention": {"x": "(D†D)^-1 phi", "y": "D x", "raw_formula": "-kappa Pminus U Xplus outer Y + kappa X outer (Yplus† U† Pplus)", "wrapped_link_sign": "applied to both terms exactly once", "projection": "Gaugefields.jl Traceless_antihermitian_add!; A=(i/2) sum_a c_a lambda_a", "gauge_1_over_nc": "not applied here"},
+  "momentum_update_scaling": {"gauge": "-step_size/NC", "fermion": "-step_size"},
+  "action": 1585.4962560000004,
+  "trajectory": {"step_size": 0.002, "steps": 2, "initial_hamiltonian": 1039.7302644896233, "proposed_hamiltonian": 1039.7302627940087, "delta_h": -1.6956146282609552e-6, "acceptance_probability": 1.0, "acceptance_rng_state": [4846228630232126559, 17, 29, 43], "acceptance_uniform": 0.894102777713165, "acceptance_uniform_bits": 4606228581418356287, "accepted": true, "next_raw_word": 16493285115757197478},
+  "comparison": {"field_max_abs_tolerance": 2e-10, "force_max_abs_tolerance": 2e-10, "action_tolerance": 2e-10, "force_finite_difference_tolerance": 2e-7, "finite_difference_epsilons": [1e-3, 5e-4, 2.5e-4], "finite_difference": "central U <- exp(epsilon*T_a)U; the final residual is tested with an O(epsilon^2) trend", "trajectory_tolerance": 2e-10},
+  "files": ["u0.npy", "u1.npy", "u2.npy", "u3.npy", "xi_julia.npy", "xi_rust.npy", "phi_julia.npy", "phi_rust.npy", "x_julia.npy", "x_rust.npy", "y_julia.npy", "y_rust.npy", "force0.npy", "force1.npy", "force2.npy", "force3.npy", "p_initial0.npy", "p_initial1.npy", "p_initial2.npy", "p_initial3.npy", "p_final0.npy", "p_final1.npy", "p_final2.npy", "p_final3.npy", "u_proposed0.npy", "u_proposed1.npy", "u_proposed2.npy", "u_proposed3.npy"],
+  "generator": {"script": "fixtures/generate.jl", "mode": "fermions_task_c", "randomness": "none for fixed fields and trajectory; explicit Xoshiro only for recorded acceptance draw"}
+}

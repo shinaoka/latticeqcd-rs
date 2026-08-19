@@ -16,6 +16,11 @@ the MIT License; its applicable notice is preserved in
 crate follows the Polyakov and clover conventions of
 [QCDMeasurements.jl](https://github.com/akio-tomiya/QCDMeasurements.jl); its notice
 is preserved in [`crates/measurements/LICENSE`](crates/measurements/LICENSE).
+The `dirac-operators` crate follows Wilson/staggered fermion, solver,
+pseudofermion-force, and RHMC conventions from
+[LatticeDiracOperators.jl](https://github.com/akio-tomiya/LatticeDiracOperators.jl),
+also MIT-licensed; its notice is preserved in
+[`crates/dirac-operators/LICENSE`](crates/dirac-operators/LICENSE).
 
 ## Signed Wilson paths and loop actions
 
@@ -271,6 +276,167 @@ with Gaugefields.jl. Regenerate the pinned three-beta statistical oracle with
 Its metadata records all block means, independent Julia seeds, provenance,
 schedule, and the fixed six-standard-error comparison criterion. See
 `examples/quenched_heatbath.rs` for a runnable loop.
+
+## Wilson Krylov solvers (Phase 3 Task B)
+
+Task B is complete and independently post-reviewed. The
+`dirac-operators` crate exposes checked, host-resident `conjugate_gradient`
+for the minimal `HermitianPositiveOperator` contract (currently
+`NormalOperator = D†D`) and `bicgstab` for the existing general
+`FermionOperator` contract. `SolverParams` takes a finite positive absolute
+squared-residual tolerance and a positive iteration limit. Each successful
+`SolverReport` includes recursive and freshly recomputed true residuals; the
+mutable initial guess is committed only after the true-residual gate passes.
+Typed failures cover non-finite intermediates, denominator breakdown, shadow
+restart singularity, stagnation, exhaustion, and incompatible fields.
+
+The implementation is deliberately parallel to
+[LatticeDiracOperators.jl v0.6.4 `cgmethods.jl`](https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/cgmethods.jl): Rust
+`conjugate_gradient` maps to `Dirac_operators.cg` (lines 768–868), and Rust
+`bicgstab` maps to `Dirac_operators.bicgstab` (lines 157–310), retaining the
+`r`, `p`, `Ap`, `s`, `t`, `alpha`, `beta`, and `omega` recurrence names and
+update order without copying Julia's global temporary pool or panic paths.
+The deterministic fixture `fixtures/fermions_task_b` records the Julia keys
+`eps`, `maxsteps`, and `verbose`, maps both entrypoints, compares zero and
+nonzero guesses on explicit nontrivial links, and independently recomputes
+true residuals.
+
+## Two-flavor Wilson pseudofermions and HMC (Phase 3 Task C)
+
+The `dirac-operators` crate implements the pinned v0.6.4 two-flavor Wilson
+contract on the host SU(3) path:
+
+```text
+S_f(phi,U) = phi† (D†D)^-1 phi,    phi = D† xi
+```
+
+`WilsonFermiAction` samples `xi` from the caller-owned
+`ReproducibleRng`; each independent real and imaginary normal is scaled by
+`1/sqrt(2)`. Its force solves `X=(D†D)^-1 phi`, `Y=DX`, then applies the
+pinned `TA[-kappa P_- U X_plus ⊗ Y + kappa X ⊗ Y_plus† U† P_+]` formula. The
+fermion TA force has no `1/NC`; the Julia-compatible gauge momentum update
+retains `-step_size/NC` separately.
+
+`wilson_hmc_update` performs a private U-P-U trajectory, evaluates the combined
+Hamiltonian, consumes one unconditional open-unit Metropolis draw, and commits
+links only on acceptance. `wilson_leapfrog_trajectory` commits both links and
+momentum only after the complete trajectory succeeds; rejection and errors leave
+caller-owned fields unchanged. The fixed Julia action/X/Y/force/trajectory
+oracle is [`fixtures/fermions_task_c`](fixtures/fermions_task_c), generated
+against LatticeDiracOperators.jl v0.6.4 and Gaugefields.jl v0.7.2. Task C is
+implementation-complete and independently post-reviewed.
+
+Regenerate it twice from the clean external project and verify the complete-tree
+hashes:
+
+```bash
+export LATTICEQCD_JULIA_PROJECT=/tmp/latticeqcd-phase3-julia-env
+export GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl
+export LATTICEDIRACOPERATORS_JL_DIR=/path/to/LatticeDiracOperators.jl
+export WILSONLOOP_JL_DIR=/path/to/Wilsonloop.jl
+julia --startup-file=no --project="$LATTICEQCD_JULIA_PROJECT" \
+  fixtures/generate.jl fermions_task_c
+```
+
+The Julia-parallel entrypoints are `sample_pseudofermions!` →
+`WilsonFermiAction::sample_pseudofermion`, `evaluate_FermiAction` →
+`WilsonFermiAction::evaluate`, `calc_UdSfdU!` → `WilsonFermiAction::force`,
+and `MDstep!`/`U_update!`/`P_update!` →
+`wilson_leapfrog_trajectory`; `Traceless_antihermitian_add!` maps to
+`Mat3::add_ta_coefficients`. The generator uses Julia 1.12.5 with clean
+Gaugefields.jl `9e5719970770f4497405a856315c90bef7f74449`,
+LatticeDiracOperators.jl `bdef628184597815ba3e0cddf2536df767e78a02`, and
+Wilsonloop.jl `e1a617fdedb19b785f89bdeb13c30e53b20743a7` checkouts.
+
+Finalization evidence: the complete `fermions_task_c` tree hash was
+`9462c1e4bf1f46c0929c81fd932f65dbd20f2a2b65168bb65ad8e8a4d92439af` on both
+runs. Julia/Rust maximum residuals were `7.16072334609889539e-15` for `X`,
+`6.62422734006908809e-15` for `Y`, `4.54747350886464119e-13` for the action,
+and `5.10702591327572009e-14` for the force. The all-coefficient central
+finite-difference series at epsilons `1e-3`, `5e-4`, and `2.5e-4` was
+`5.005235745869641e-7`, `1.262665048074041e-7`, and `3.463491360378157e-8`;
+all `512/512` coefficients passed at `5e-4`, with ratios `3.964024943514664`
+and `3.645642262945268`.
+
+## One-link staggered fermions and multi-shift CG (Phase 3 Task D)
+
+Task D is implementation-complete and independently post-reviewed.
+`StaggeredDirac` maps the pinned LatticeDiracOperators.jl v0.6.4
+`Staggered_Dirac_operator`/`Dx!` path, `StaggeredAdjoint` maps its adjoint,
+`StaggeredNormalOperator` composes `D†D`, and
+`StaggeredClosedNormalOperator` independently lowers `mass² I - K²`.
+`multi_shift_cg` maps `Dirac_operators.shiftedcg`, retaining the shared
+`r`, `p`, `q`, `alpha`, `beta`, `rho_m`, `rho_0`, and `rho_p` recurrence order
+with transactional outputs and fresh true-residual checks. Eta is
+`[1,(-1)^x,(-1)^(x+y),(-1)^(x+y+z)]` in zero-based coordinates; the validated
+fermion boundary sign is applied once per wrapped hop.
+
+The fixture uses `[2,2,2,2]`, one component, mass `0.17`, shifts
+`[0.31, 0.0, 0.07]`, absolute squared solver tolerance `1e-24`, and maximum
+iterations `2000`. The operator, anti-Hermiticity, and normal-composition
+comparison tolerance is `2e-12`; the independently recomputed shifted true
+relative-residual tolerance is `1e-11`. These are distinct gates: the former
+compares operator components/identities, while the latter checks each solved
+`(D†D + shift I)x = b` after a fresh application.
+
+Regenerate twice from the clean pinned Julia project:
+
+```bash
+export LATTICEQCD_JULIA_PROJECT=/tmp/latticeqcd-phase3-julia-env
+export GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl
+export LATTICEDIRACOPERATORS_JL_DIR=/path/to/LatticeDiracOperators.jl
+export WILSONLOOP_JL_DIR=/path/to/Wilsonloop.jl
+export JULIA_NUM_THREADS=1
+julia --startup-file=no --project="$LATTICEQCD_JULIA_PROJECT" \
+  fixtures/generate.jl fermions_task_d
+```
+
+Finalization evidence: both 38-file trees (37 declared payloads plus metadata)
+have complete-tree hash
+`c372e6e56bc05ebc611c6cc3dba5c247eafbc12ca58a0eee2ac3737cdbb08d4b`. The
+Julia reports have initial residual squared `2.99675440000000037e1`; all three
+shifts converged in 8 iterations on the updated-residual branch. In shift order
+`0.31`, `0.0`, `0.07`, the Julia recursive/true residual-squared pairs are
+`(1.77459964884789642e-27, 1.47868086305190983e-30)`,
+`(1.19636782643941803e-25, 7.62807887898313613e-30)`, and
+`(4.17668148129519829e-26, 4.43903981763168336e-30)`; Rust true relative
+residuals are respectively `2.52706753667624838e-16`,
+`5.23618850174067806e-16`, and `3.73441567789983714e-16`.
+
+The fixture test consumes all 37 declared payloads and every metadata/report
+field. D, D†, and K payload parity is bit-exact; normal-composition parity is
+`3.19867204157556452e-17` (periodic) and `1.66533453693773481e-16`
+(default anti-periodic), K anti-Hermiticity is
+`2.48253415324727312e-16`, and eta/boundary impulse checks are exact.
+
+## Two-flavor staggered RHMC (Phase 3 Task E)
+
+Task E deterministic integration and the independent short ensemble comparison
+are complete. Plaquette and chiral-condensate means differ from Julia by
+`0.154717` and `0.367498` combined standard errors. `StaggeredFermiAction`
+follows the pinned LatticeDiracOperators.jl
+v0.6.4 `StaggeredFermiAction`/`RHMC` path with the exact private Nf=2 degree-15
+`x^(+1/8)` refresh and `x^(-1/8)` action tables and degree-10 `x^(-1/4)`
+force table on `[0.0004,64]`. The scalar 4097-point logarithmic-grid maximum
+absolute errors are `2.505791796281187e-9`, `3.9620045022559225e-9`, and
+`1.5595609319518644e-5` (refresh/action/force). Explicit deterministic `xi`
+refresh, action `X`, force `X_j/Y_j`, and transactional U-P-U trajectory
+payloads are checked against Julia, including validation/error rollback,
+rejection rollback, RNG advancement, and reversibility.
+
+`fixtures/fermions_task_e` contains 68 files (67 declared payloads plus
+metadata); two clean Julia 1.12.5 generations have identical complete-tree
+hash `9e166b37d2c138a28f6d75395e11dc8f91f910599f0397e5888bbd738ba6d34a`.
+The all-512 central force FD contract uses epsilons
+`[0.32,0.16,0.08,0.04]`, maxima
+`[8.434653210321642e-6,2.139177378187619e-6,5.605769951367093e-7,1.6563038083509257e-7]`,
+ratios `[3.9429424115674574,3.816027765580949,3.384505863660601]`, and pass
+counts `[291,442,510,512]`; selected `0.04` passes all `512/512` below `5e-7`.
+Run the checked Wilson/staggered/RHMC smoke example with:
+
+```text
+cargo run -p dirac-operators --example fermions --all-features
+```
 
 ## Quenched SU(3) HMC
 

@@ -1,0 +1,66 @@
+{
+  "schema": "fermions_task_e_ensemble.v1",
+  "lattice": [2, 2, 2, 2],
+  "nc": 3,
+  "beta": 5.7,
+  "mass": 0.17,
+  "nf": 2,
+  "boundaries": [1, 1, 1, -1],
+  "spectral_bounds": {"claimed_lower": 0.0004, "claimed_upper": 64.0, "coefficient_interval": [0.0004, 64.0]},
+  "degrees": {"refresh": 15, "action": 15, "md_force": 10},
+  "solver_parameters": {"absolute_squared_tolerance": 1.0e-24, "max_iterations": 2000, "trajectory_method": "cg", "chiral_method": "bicg", "julia_keys": ["Dirac_operator", "mass", "verbose_level", "boundarycondition", "eps", "MaxCGstep", "method_CG"]},
+  "schedule": {"initial_condition": "cold", "burn_in_trajectories": 4, "blocks": 3, "trajectories_per_block": 4, "measured_trajectories": 12, "dt": 0.001, "steps": 2, "measurement": "after each trajectory; rejected links are restored before measurement",
+    "integrator": "U <- exp((dt/2)P)U; P <- P - dt*(gauge_force/NC + fermion_force); U <- exp((dt/2)P)U",
+    "acceptance": "unconditional rand() draw; accept iff rand() <= min(1, exp(-delta_h)); rejected links roll back"},
+  "seeds": {"master": 2026081901, "trajectory_seeds": {"burn_in": [2026081901, 2026081902, 2026081903, 2026081904], "measured": [2026081905, 2026081906, 2026081907, 2026081908, 2026081909, 2026081910, 2026081911, 2026081912, 2026081913, 2026081914, 2026081915, 2026081916]}, "source_seeds": [[2026181902, 2026181903], [2026181904, 2026181905], [2026181906, 2026181907], [2026181908, 2026181909], [2026181910, 2026181911], [2026181912, 2026181913], [2026181914, 2026181915], [2026181916, 2026181917], [2026181918, 2026181919], [2026181920, 2026181921], [2026181922, 2026181923], [2026181924, 2026181925]], "stream_policy": "Random.seed!(trajectory_seed) before each pinned momentum/pseudofermion/acceptance sequence; Random.seed!(source_seed) before each pinned Z4 source"},
+  "normalization": {"plaquette": "real(calculate_Plaquette(U,temp1,temp2)) / (6 * NV * NC)", "chiral_condensate": "(Nf/4) / NV * Re(dot(r, D^-1*r))", "nv": 16, "nf_over_four": 0.5, "standard_error": "sample_stddev(block_means) / sqrt(number_of_blocks)"},
+  "source_generation": {"sources_per_configuration": 2, "distribution": "canonical Z4 implemented in the fixture", "seed_call": "Random.seed!(source_seed) immediately before each source", "source_formula": "theta = rand(0:3)*pi/2; r = cos(theta) + im*sin(theta)"},
+  "measurements": [
+    {"measurement": 1, "global_trajectory": 5, "block": 1, "trajectory_in_block": 1, "trajectory_seed": 2026081905, "source_seeds": [2026181902, 2026181903], "chiral_source_values": [0.24784675330952205, 0.24754350289502633], "plaquette": 0.9999463725417915, "chiral_condensate": 0.24769512810227418, "delta_h": -1.75820247250158e-7, "acceptance_probability": 1.0, "acceptance_uniform": 0.05879687984082049, "accepted": true},
+    {"measurement": 2, "global_trajectory": 6, "block": 1, "trajectory_in_block": 2, "trajectory_seed": 2026081906, "source_seeds": [2026181904, 2026181905], "chiral_source_values": [0.24819716037919595, 0.24783077581463353], "plaquette": 0.9999354971336764, "chiral_condensate": 0.24801396809691473, "delta_h": 7.674964308534982e-8, "acceptance_probability": 0.9999999232503599, "acceptance_uniform": 0.07950009406496705, "accepted": true},
+    {"measurement": 3, "global_trajectory": 7, "block": 1, "trajectory_in_block": 3, "trajectory_seed": 2026081907, "source_seeds": [2026181906, 2026181907], "chiral_source_values": [0.24706733853972027, 0.2478519748504158], "plaquette": 0.9999278314650203, "chiral_condensate": 0.24745965669506803, "delta_h": -3.591119934753806e-8, "acceptance_probability": 1.0, "acceptance_uniform": 0.4409867370942018, "accepted": true},
+    {"measurement": 4, "global_trajectory": 8, "block": 1, "trajectory_in_block": 4, "trajectory_seed": 2026081908, "source_seeds": [2026181908, 2026181909], "chiral_source_values": [0.24923107186698365, 0.24722740517990033], "plaquette": 0.9999143353085507, "chiral_condensate": 0.24822923852344198, "delta_h": -1.378048750666494e-7, "acceptance_probability": 1.0, "acceptance_uniform": 0.25992520165256705, "accepted": true},
+    {"measurement": 5, "global_trajectory": 9, "block": 2, "trajectory_in_block": 1, "trajectory_seed": 2026081909, "source_seeds": [2026181910, 2026181911], "chiral_source_values": [0.24763733745780842, 0.24782634785730162], "plaquette": 0.9999054669419157, "chiral_condensate": 0.24773184265755502, "delta_h": 1.641209337321925e-7, "acceptance_probability": 0.9999998358790797, "acceptance_uniform": 0.4014362279437653, "accepted": true},
+    {"measurement": 6, "global_trajectory": 10, "block": 2, "trajectory_in_block": 2, "trajectory_seed": 2026081910, "source_seeds": [2026181912, 2026181913], "chiral_source_values": [0.24790527387647943, 0.24708627684731668], "plaquette": 0.9998930173594712, "chiral_condensate": 0.24749577536189804, "delta_h": 3.7642308825525106e-8, "acceptance_probability": 0.9999999623576918, "acceptance_uniform": 0.44553892834175235, "accepted": true},
+    {"measurement": 7, "global_trajectory": 11, "block": 2, "trajectory_in_block": 3, "trajectory_seed": 2026081911, "source_seeds": [2026181914, 2026181915], "chiral_source_values": [0.24814604604273763, 0.2483330389941297], "plaquette": 0.9998783436430548, "chiral_condensate": 0.24823954251843366, "delta_h": -3.3374462304891495e-7, "acceptance_probability": 1.0, "acceptance_uniform": 0.3268885466579263, "accepted": true},
+    {"measurement": 8, "global_trajectory": 12, "block": 2, "trajectory_in_block": 4, "trajectory_seed": 2026081912, "source_seeds": [2026181916, 2026181917], "chiral_source_values": [0.24727939812974775, 0.24714154385415774], "plaquette": 0.9998754170303338, "chiral_condensate": 0.24721047099195276, "delta_h": 8.511250371157075e-8, "acceptance_probability": 0.9999999148875, "acceptance_uniform": 0.6509156336484232, "accepted": true},
+    {"measurement": 9, "global_trajectory": 13, "block": 3, "trajectory_in_block": 1, "trajectory_seed": 2026081913, "source_seeds": [2026181918, 2026181919], "chiral_source_values": [0.2475576492539181, 0.2475363302589535], "plaquette": 0.9998603968666944, "chiral_condensate": 0.2475469897564358, "delta_h": 4.416347110236529e-8, "acceptance_probability": 0.9999999558365299, "acceptance_uniform": 0.11578171431244366, "accepted": true},
+    {"measurement": 10, "global_trajectory": 14, "block": 3, "trajectory_in_block": 2, "trajectory_seed": 2026081914, "source_seeds": [2026181920, 2026181921], "chiral_source_values": [0.24796109360965063, 0.24803806109547946], "plaquette": 0.9998400100657219, "chiral_condensate": 0.24799957735256506, "delta_h": 1.9035496734431945e-8, "acceptance_probability": 0.9999999809645035, "acceptance_uniform": 0.994675510883612, "accepted": true},
+    {"measurement": 11, "global_trajectory": 15, "block": 3, "trajectory_in_block": 3, "trajectory_seed": 2026081915, "source_seeds": [2026181922, 2026181923], "chiral_source_values": [0.2473986732032287, 0.2474211801825575], "plaquette": 0.9998293962373617, "chiral_condensate": 0.24740992669289308, "delta_h": -3.0119736038614064e-8, "acceptance_probability": 1.0, "acceptance_uniform": 0.9275705773341973, "accepted": true},
+    {"measurement": 12, "global_trajectory": 16, "block": 3, "trajectory_in_block": 4, "trajectory_seed": 2026081916, "source_seeds": [2026181924, 2026181925], "chiral_source_values": [0.24808204951461585, 0.24804230597120888], "plaquette": 0.999815424774946, "chiral_condensate": 0.24806217774291237, "delta_h": 9.509966503173928e-8, "acceptance_probability": 0.9999999049003395, "acceptance_uniform": 0.45010112139223524, "accepted": true}
+  ],
+  "blocks": [
+    {"block": 1, "measurements": [1, 2, 3, 4], "plaquette_mean": 0.9999310091122597, "chiral_condensate_mean": 0.24784949785442473, "delta_h_mean": -6.819666964474891e-8},
+    {"block": 2, "measurements": [5, 6, 7, 8], "plaquette_mean": 0.9998880612436939, "chiral_condensate_mean": 0.24766940788245984, "delta_h_mean": -1.1717219194906647e-8},
+    {"block": 3, "measurements": [9, 10, 11, 12], "plaquette_mean": 0.9998363069861809, "chiral_condensate_mean": 0.2477546678862016, "delta_h_mean": 3.204472420748061e-8}
+  ],
+  "statistics": {
+    "plaquette": {"block_means": [0.9999310091122597, 0.9998880612436939, 0.9998363069861809], "mean": 0.9998851257807115, "standard_error": 2.7377520451125446e-5},
+    "chiral_condensate": {"block_means": [0.24784949785442473, 0.24766940788245984, 0.2477546678862016], "mean": 0.24775785787436203, "standard_error": 5.2011958621477216e-5},
+    "delta_h": {"block_means": [-6.819666964474891e-8, -1.1717219194906647e-8, 3.204472420748061e-8], "mean": -1.595638821072498e-8, "standard_error": 2.901472141182791e-8},
+    "mean_delta_h": -1.595638821072498e-8,
+    "acceptance": {"accepted": 12, "total": 12, "rate": 1.0}
+  },
+  "burn_in_summary": {"delta_h": [1.94462444369492e-7, 2.914906360729219e-7, -1.1469305150058062e-7, 1.3603769843939517e-7], "accepted": [1, 1, 1, 1]},
+  "provenance": {
+    "julia": {"version": "1.12.5", "source_commit": "5fe89b8ddc166260bfcd4a195b305aff0ccad686"},
+    "gaugefields_jl": {"package": "Gaugefields.jl", "version": "0.7.2", "commit": "9e5719970770f4497405a856315c90bef7f74449", "clean": true},
+    "latticediracoperators_jl": {"package": "LatticeDiracOperators.jl", "version": "0.6.4", "commit": "bdef628184597815ba3e0cddf2536df767e78a02", "clean": true},
+    "wilsonloop_jl": {"package": "Wilsonloop.jl", "version": "0.1.5", "commit": "e1a617fdedb19b785f89bdeb13c30e53b20743a7", "clean": true},
+    "qcdmeasurements_jl": {"package": "QCDMeasurements.jl", "version": "0.2.13", "commit": "9e04c37bbd68712cf7a749ae5aff10eb6aae4566"}
+  },
+  "source_functions": ["StaggeredFermiAction", "FermiAction", "gauss_sampling_in_action!", "sample_pseudofermions!", "evaluate_FermiAction", "calc_UdSfdU!", "shiftedcg", "gauss_distribution!", "gauss_distribution_fermion!", "solve_DinvX!", "GaugeAction", "make_loops_fromname", "calculate_Plaquette", "Traceless_antihermitian_add!", "exptU!", "Random.seed!", "rand"],
+  "source_urls": [
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/action/StaggeredFermiAction.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/rhmc/rhmc.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/Diracoperators.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/AbstractFermions_4D.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/test/wilsonhmc.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/action/GaugeActions.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/4D/TA_gaugefields_4D_serial.jl",
+    "https://github.com/akio-tomiya/Wilsonloop.jl/blob/e1a617fdedb19b785f89bdeb13c30e53b20743a7/src/Wilsonloop.jl",
+    "https://github.com/akio-tomiya/QCDMeasurements.jl/blob/9e04c37bbd68712cf7a749ae5aff10eb6aae4566/src/measurements/measure_chiral_condensate.jl"
+  ],
+  "upstream_issues": [{"package": "LatticeDiracOperators.jl", "revision": "bdef628184597815ba3e0cddf2536df767e78a02", "function": "Z4_distribution_fermi!", "detail": "The pinned implementation uses theta=rand(0:3)*pi/4, not the canonical 2*pi/4 phase grid; this fixture avoids that biased source and implements canonical Z4 explicitly."}],
+  "generator": {"script": "fixtures/generate.jl", "mode": "fermions_task_e_ensemble", "files": ["metadata.json"], "randomness": "explicit Julia task-local seeds; no Rust or binary payloads"}
+}
