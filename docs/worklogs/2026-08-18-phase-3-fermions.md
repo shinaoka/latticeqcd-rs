@@ -1,6 +1,6 @@
 # Phase 3 fermions worklog
 
-Status: Tasks A-C complete; Task D implementation pending
+Status: Tasks A-D complete; Task E implementation pending
 
 ## Base and integration state
 
@@ -64,7 +64,7 @@ Suspicions are reproduced before being filed as facts.
 | A: field and Wilson operator | `docs/design/phase-3-fermions.md` Task A | Correct-to-merge | Correct-to-merge |
 | B: CG and BiCGStab | same, Task B | Correct-to-merge | Correct-to-merge |
 | C: Wilson pseudofermion/HMC | same, Task C | Correct-to-merge | Correct-to-merge |
-| D: staggered/multi-shift CG | same, Task D | Correct-to-merge | pending |
+| D: staggered/multi-shift CG | same, Task D | Correct-to-merge | Correct-to-merge |
 | E: two-flavor RHMC/integration | same, Task E | Correct-to-merge | pending |
 | Integrated Phase 3 | full design | Correct-to-merge | pending |
 
@@ -443,3 +443,144 @@ corrections:
 The five Task C public integration tests pass after these corrections. The
 focused delta re-review found no remaining issue and recorded
 `Correct-to-merge`.
+
+## Task D finalization evidence
+
+### Julia-parallel mapping and scope
+
+Task D is implementation-complete; independent post-review remains pending.
+The Rust path stays parallel to the pinned LatticeDiracOperators.jl v0.6.4
+sources: `Staggered_Dirac_operator`/`Dx!` map to `StaggeredDirac`, its adjoint
+maps to `StaggeredAdjoint`, `DdagD_Staggered_operator` maps to
+`StaggeredNormalOperator`, the independently lowered `mass^2 I-K^2` check maps
+to `StaggeredClosedNormalOperator`, and `Dirac_operators.shiftedcg` maps to
+`multi_shift_cg`. The recurrence retains Julia's `r`, `p`, `q`, `alpha`,
+`beta`, `rho_m`, `rho_0`, and `rho_p` order. Zero-based eta phases are
+`[1,(-1)^x,(-1)^(x+y),(-1)^(x+y+z)]`; a fermion boundary sign is applied once
+when a hop wraps.
+
+No Task E coefficient, action, or RHMC implementation symbols were added.
+The Task D scope is limited to `staggered.rs`, the shifted-CG additions and
+errors needed by `solvers.rs`, the fixture generator, focused tests, and
+metadata/documentation.
+
+### Fixture audit and exact values
+
+The fixture uses lattice `[2,2,2,2]`, one component, mass `0.17`, shifts
+`[0.31, 0.0, 0.07]`, absolute squared solver tolerance `1e-24`, and maximum
+iterations `2000`. The operator, anti-Hermiticity, and normal-composition
+comparison tolerance is `2e-12`; the fresh shifted true-relative residual
+criterion is `1e-11`. These tolerances are intentionally distinct: `2e-12`
+compares operator components and algebraic identities, while `1e-11` checks
+fresh relative residuals for each shifted solve; `1e-24` is the solver's
+absolute squared stopping/true-residual gate.
+
+`metadata.json` declares 37 payloads and the fixture tree contains 38 files
+including metadata. The integration test consumes every declared payload,
+including all `u*`, input/rhs, eta, D, Ddag, K, normal-composition,
+normal-closed, and shifted solution arrays, and consumes every metadata and
+shifted-report field. The two clean Julia 1.12.5 generations used
+`LATTICEQCD_JULIA_PROJECT=/tmp/latticeqcd-phase3-julia-env`,
+`JULIA_NUM_THREADS=1`, Gaugefields.jl
+`9e5719970770f4497405a856315c90bef7f74449`, LatticeDiracOperators.jl
+`bdef628184597815ba3e0cddf2536df767e78a02`, and Wilsonloop.jl
+`e1a617fdedb19b785f89bdeb13c30e53b20743a7` from clean checkouts. Both
+complete-tree hashes were
+`c372e6e56bc05ebc611c6cc3dba5c247eafbc12ca58a0eee2ac3737cdbb08d4b`; the
+file count was 38 for each run and the complete directory comparison was
+empty.
+
+The fixture's D, Ddag, and K payload parity is bit-exact; eta signs and the
+boundary-wrap impulse payload are exact. Normal-composition residuals are
+`3.19867204157556452e-17` (periodic) and
+`1.66533453693773481e-16` (default anti-periodic). The generated
+`normal_closed` payload is bit-exact with its recorded oracle; the meaningful
+closed-form-versus-composition residuals are the two nonzero values above. K
+anti-Hermiticity is `2.48253415324727312e-16`. The focused cold
+checks additionally report adjoint residual `4.44089209850062616e-16`, cold K
+anti-Hermiticity `6.93889390390722838e-17`, and closed-normal residual
+`7.10542735760100186e-15`.
+
+The Julia shifted reports have initial residual squared
+`2.99675440000000037e1`; all shifts converge in 8 iterations on
+`updated_residual`. In shift order `0.31`, `0.0`, `0.07`, the exact Julia
+recursive/true residual-squared pairs are:
+
+```text
+0.31: 1.77459964884789642e-27 / 1.47868086305190983e-30
+0.0:  1.19636782643941803e-25 / 7.62807887898313613e-30
+0.07: 4.17668148129519829e-26 / 4.43903981763168336e-30
+```
+
+Rust recursive/true residual-squared pairs are
+`(1.77459964884795812e-27, 1.91374843748898659e-30)`,
+`(1.19636782643945936e-25, 8.21640232874482560e-30)`, and
+`(4.17668148129534236e-26, 4.17923186813384454e-30)`; differences from the
+Julia reports are all below the absolute `1e-24` gate. Rust fresh true
+relative residuals are
+`2.52706753667624838e-16`, `5.23618850174067806e-16`, and
+`3.73441567789983714e-16`.
+
+### Verification and remaining risk
+
+The RED-first metadata audit initially rejected exact true-residual parity
+because the Rust and Julia independently recomputed residual squares differ
+at approximately `1e-30`, far below the absolute `1e-24` solver gate. The test
+now consumes and reports that field while applying the documented absolute
+solver tolerance, without weakening the relative solve criterion.
+
+The focused Task D command passed 3 kernel/validation tests and 1 fixture test.
+The combined Task A-C regression command and the required workspace gates are
+recorded below after they run. No commit, push, issue, branch, or pinned
+reference checkout was modified; the fixture and dedicated `target/` are kept.
+
+### Final verification record
+
+The combined focused command
+`CARGO_TARGET_DIR=/home/shinaoka/tensor4all/latticeqcd-rs-phase3/target cargo test -p dirac-operators --tests`
+passed 36 tests: 12 unit tests, Task A 9 tests, Task B 3 tests, Task C 8
+tests, and Task D 4 tests. The first run was stopped by the 120-second shell
+timeout while Task C's all-coefficient finite-difference test was still
+running; the exact command was rerun with a 600-second timeout and passed,
+including that test's 136.64 seconds.
+
+The requested workspace gates passed from the dedicated target:
+
+```text
+cargo fmt --all                                      PASS
+cargo fmt --all -- --check                           PASS
+cargo check --workspace                              PASS
+cargo test --workspace                               PASS (245 passed, 1 ignored)
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+                                                       PASS
+cargo test --workspace --all-features                PASS (255 passed, 1 ignored)
+cargo test --doc --workspace --all-features          PASS (62 passed)
+cargo doc --workspace --all-features --no-deps       PASS
+```
+
+All five examples passed with `--all-features`: `ildg_roundtrip`,
+`quenched_heatbath`, `quenched_hmc`, `traced_wilson_action`, and
+`quenched_measurements`. `git diff --check` passed. The exact tenferro pin
+check found five manifest declarations and nine matching lockfile source lines
+for `c942129974b544225ed963414d7be1300980f901`. The stale-symbol, MIT license,
+Julia provenance, and scope checks passed; the Task D generator slice and
+staggered tests contain no Task E coefficient/action/RHMC symbols. Temporary
+comparison directories were removed, while `fixtures/fermions_task_d` and the
+dedicated `target/` remain. No commit, push, issue, or reference checkout was
+modified.
+
+### Task D post-review findings
+
+`reviewer-flash` recorded `Correct-to-merge` with no Critical or Important
+finding. Three Minor findings were fixed:
+
+- the component-one Julia fixture helper is now named
+  `julia_one_component_field` and explicitly documents why the two
+  column-major payloads are identical instead of pretending to transpose;
+- normal evidence distinguishes bit-exact recorded payload parity from the
+  measured closed-form-versus-composition residuals;
+- backward eta coordinates are derived from the checked `minus_site`, removing
+  a second hand-written wrap calculation.
+
+Task D focused tests, Clippy, formatting, and diff-check pass after the fixes.
+The delta re-review found no remaining issue and recorded `Correct-to-merge`.

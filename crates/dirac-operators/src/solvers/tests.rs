@@ -480,6 +480,56 @@ fn solver_reuses_operator_scratch_across_iterations() {
 }
 
 #[test]
+fn multi_shift_reuses_operator_scratch_and_preserves_outputs_on_failure() {
+    let operator = RecordingOperatorScratch {
+        pointers: RefCell::new(Vec::new()),
+    };
+    let rhs = field([C1, C1, C1]);
+    let mut solutions = vec![field([C0, C0, C0]), field([C0, C0, C0])];
+    let reports = multi_shift_cg(
+        &mut solutions,
+        &operator,
+        &rhs,
+        &[0.0, 0.5],
+        SolverParams::new(1.0e-20, 16).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(reports.len(), 2);
+    assert!(reports.iter().all(|report| report.iterations > 1));
+    let pointers = operator.pointers.borrow();
+    assert!(pointers.len() >= 3);
+    assert!(pointers.windows(2).all(|window| window[0] == window[1]));
+    drop(pointers);
+
+    let mut exhausted = vec![field([C0, C0, C0]), field([C0, C0, C0])];
+    let before = output_values(&exhausted[0]);
+    let error = multi_shift_cg(
+        &mut exhausted,
+        &operator,
+        &rhs,
+        &[0.0, 0.5],
+        SolverParams::new(1.0e-30, 1).unwrap(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, DiracError::Solver(SolverError::Exhaustion)));
+    assert_eq!(output_values(&exhausted[0]), before);
+
+    let sentinel = field([Complex64::new(3.0, -2.0), C1, C0]);
+    let before = output_values(&sentinel);
+    let mut breakdown = vec![sentinel.try_clone().unwrap()];
+    let error = multi_shift_cg(
+        &mut breakdown,
+        &ZeroOperator,
+        &rhs,
+        &[0.0],
+        SolverParams::new(1.0e-20, 4).unwrap(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, DiracError::Solver(SolverError::Breakdown)));
+    assert_eq!(output_values(&breakdown[0]), before);
+}
+
+#[test]
 fn wrong_lattice_and_components_leave_output_bitwise_unchanged() {
     let links = gaugefields::cold_su3(lattice()).unwrap();
     let operator = crate::wilson::WilsonDirac::new(&links, 0.1).unwrap();

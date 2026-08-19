@@ -1,0 +1,37 @@
+{
+  "schema": "fermions_task_d.v1",
+  "lattice": [2, 2, 2, 2],
+  "nc": 3,
+  "components": 1,
+  "mass": 0.17,
+  "boundaries": {"periodic": [1, 1, 1, 1], "default_antiperiodic": [1, 1, 1, -1]},
+  "shifts": [0.31, 0.0, 0.07],
+  "solver_parameters": {"absolute_squared_tolerance": 1.0e-24, "max_iterations": 2000, "julia_solver_keywords": ["eps", "maxsteps", "verbose"]},
+  "gaugefields_jl": {"package": "Gaugefields.jl", "version": "0.7.2", "commit": "9e5719970770f4497405a856315c90bef7f74449", "clean": true},
+  "latticediracoperators_jl": {"package": "LatticeDiracOperators.jl", "version": "0.6.4", "commit": "bdef628184597815ba3e0cddf2536df767e78a02", "clean": true},
+  "source_urls": [
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/StaggeredFermion/StaggeredFermion.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/StaggeredFermion/StaggeredFermion_4D_nowing.jl",
+    "https://github.com/shinaoka/LatticeDiracOperators.jl/blob/bdef628184597815ba3e0cddf2536df767e78a02/src/cgmethods.jl",
+    "https://github.com/shinaoka/Gaugefields.jl/blob/9e5719970770f4497405a856315c90bef7f74449/src/4D/nowing/gaugefields_4D_nowing.jl"
+  ],
+  "source_functions": ["Staggered_Dirac_operator", "Dx!", "shift_fermion", "shifted_fermion!", "staggered_U", "DdagD_Staggered_operator", "LinearAlgebra.mul!", "shiftedcg"],
+  "entrypoint_map": [
+    {"julia": "Staggered_Dirac_operator", "julia_source": "src/StaggeredFermion/StaggeredFermion.jl:25-78", "rust": "staggered.rs::StaggeredDirac::with_boundary"},
+    {"julia": "Dx!", "julia_source": "src/StaggeredFermion/StaggeredFermion_4D_nowing.jl:43-80", "rust": "staggered.rs::StaggeredDirac::apply_hopping_to_data"},
+    {"julia": "staggered_U", "julia_source": "Gaugefields.jl/src/4D/nowing/gaugefields_4D_nowing.jl:459-504", "rust": "staggered.rs::staggered_eta + Mat3::scaled"},
+    {"julia": "shift_fermion/shifted_fermion!", "julia_source": "src/StaggeredFermion/StaggeredFermion_4D_nowing.jl:99-198", "rust": "staggered.rs::StaggeredDirac::neighbor"},
+    {"julia": "LinearAlgebra.mul! + DdagD_Staggered_operator", "julia_source": "src/StaggeredFermion/StaggeredFermion.jl:166-243", "rust": "staggered.rs::StaggeredNormalOperator + StaggeredClosedNormalOperator"},
+    {"julia": "Dirac_operators.shiftedcg", "julia_source": "src/cgmethods.jl:872-968", "rust": "solvers.rs::multi_shift_cg"}
+  ],
+  "layout": {"julia_shape": "[3,NX,NY,NZ,NT,1]", "rust_shape": "[3,1,NX,NY,NZ,NT]", "conversion": "permutedims(array, (1, 6, 2, 3, 4, 5))", "permutation": [1, 6, 2, 3, 4, 5], "site_order": "x fastest"},
+  "eta": {"formula": ["eta_0=1", "eta_1=(-1)^x", "eta_2=(-1)^(x+y)", "eta_3=(-1)^(x+y+z)"], "coordinates": "zero-based", "files": ["eta.npy", "eta_impulses.npy"], "impulse_layout": "[direction, lower_or_upper_source, eta_or_default_boundary_sign]", "wrap_sign": "boundary sign applied once on each wrapped fermion hop"},
+  "construction": "explicit diagonal nontrivial SU(3) links, one-component input and rhs from fixed formulas; no RNG or global state",
+  "normal": {"composition": "Ddag(D(x))", "closed_form": "mass^2*x-K(K(x))", "antihermitian_identity": "Kdag=-K"},
+  "comparison": {"operator_max_abs_tolerance": 2.0e-12, "antihermiticity_tolerance": 2.0e-12, "normal_composition_tolerance": 2.0e-12, "shifted_true_relative_residual_tolerance": 1.0e-11, "criterion": "maximum absolute complex-component operator residual and fresh relative shifted residual"},
+  "files": ["u0.npy", "u1.npy", "u2.npy", "u3.npy", "input_julia.npy", "input_rust.npy", "rhs_julia.npy", "rhs_rust.npy", "eta.npy", "eta_impulses.npy",
+    "d_periodic_julia.npy", "d_periodic_rust.npy", "ddag_periodic_julia.npy", "ddag_periodic_rust.npy", "k_periodic_julia.npy", "k_periodic_rust.npy", "normal_composition_periodic_julia.npy", "normal_composition_periodic_rust.npy", "normal_closed_periodic_julia.npy", "normal_closed_periodic_rust.npy",
+    "d_default_antiperiodic_julia.npy", "d_default_antiperiodic_rust.npy", "ddag_default_antiperiodic_julia.npy", "ddag_default_antiperiodic_rust.npy", "k_default_antiperiodic_julia.npy", "k_default_antiperiodic_rust.npy", "normal_composition_default_antiperiodic_julia.npy", "normal_composition_default_antiperiodic_rust.npy", "normal_closed_default_antiperiodic_julia.npy", "normal_closed_default_antiperiodic_rust.npy",
+    "shift0_julia.npy", "shift0_rust.npy", "shift1_julia.npy", "shift1_rust.npy", "shift2_julia.npy", "shift2_rust.npy", "shifted_reports.json"],
+  "generator": {"script": "fixtures/generate.jl", "mode": "fermions_task_d", "randomness": "none"}
+}

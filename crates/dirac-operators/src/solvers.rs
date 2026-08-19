@@ -172,6 +172,123 @@ pub struct SolverReport {
     pub convergence_branch: ConvergenceBranch,
 }
 
+/// Diagnostics for one solution of a checked shifted-CG solve.
+///
+/// The `shift` field identifies the equation `(A + shift I)x = b`. The true
+/// residual is recomputed with a fresh operator application before the result
+/// can be committed.
+///
+/// # Examples
+///
+/// ```
+/// use dirac_operators::{ConvergenceBranch, MultiShiftSolverReport};
+///
+/// let report = MultiShiftSolverReport {
+///     shift: 0.25,
+///     iterations: 4,
+///     recursive_residual_squared: 1.0e-28,
+///     initial_residual_squared: 1.0,
+///     true_residual_squared: 1.0e-29,
+///     tolerance: 1.0e-24,
+///     maximum_iterations: 64,
+///     convergence_branch: ConvergenceBranch::UpdatedResidual,
+/// };
+/// assert_eq!(report.shift, 0.25);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MultiShiftSolverReport {
+    /// The non-negative shift for this solution.
+    pub shift: f64,
+    /// Number of completed recurrence iterations for this shift.
+    pub iterations: usize,
+    /// Residual squared estimated by the shifted recurrence.
+    pub recursive_residual_squared: f64,
+    /// Residual squared of the supplied initial guess.
+    pub initial_residual_squared: f64,
+    /// Freshly recomputed residual squared of the committed output.
+    pub true_residual_squared: f64,
+    /// Absolute squared-residual stopping tolerance.
+    pub tolerance: f64,
+    /// Iteration limit supplied to the solve.
+    pub maximum_iterations: usize,
+    /// The recurrence branch that first crossed the tolerance.
+    pub convergence_branch: ConvergenceBranch,
+}
+
+/// Applies the pinned `shiftedcg` recurrence to all supplied shifts.
+///
+/// The equations are `(operator + beta[j] I) * output[j] = rhs`. Current output
+/// values are checked initial guesses. A zero initial-guess batch uses the
+/// Julia-parallel multi-shift recurrence with shared `r`, `p`, `q`, `alpha`,
+/// `beta`, `rho_m`, `rho_0`, and `rho_p` updates. Non-zero guesses use checked
+/// independent CG recurrences because shifted residuals are not collinear for
+/// arbitrary per-shift guesses; all scratch is still allocated before the
+/// iteration loops. Shift order is preserved and is not required to be sorted.
+///
+/// # Errors
+///
+/// Returns [`DiracError::Solver`] with [`SolverError::ShiftCountMismatch`] or
+/// [`SolverError::InvalidShift`] for invalid shift input, or with typed
+/// non-finite, breakdown, stagnation, exhaustion, or true-residual failures.
+/// Field/operator mismatches are returned directly. All output fields remain
+/// unchanged on every error.
+///
+/// # Examples
+///
+/// ```
+/// use dirac_operators::{multi_shift_cg, FermionField, SolverParams, WilsonDirac};
+/// use gaugefields::{cold_su3, LatticeShape4};
+///
+/// let lattice = LatticeShape4::new([1, 1, 1, 1])?;
+/// let links = cold_su3(lattice)?;
+/// let dirac = WilsonDirac::new(&links, 0.1)?;
+/// let normal = dirac.normal();
+/// let rhs = FermionField::zeros(lattice, 4)?;
+/// let shifts = [0.0, 0.2];
+/// let mut solutions = (0..shifts.len())
+///     .map(|_| FermionField::zeros(lattice, 4))
+///     .collect::<Result<Vec<_>, _>>()?;
+/// let reports = multi_shift_cg(
+///     &mut solutions,
+///     &normal,
+///     &rhs,
+///     &shifts,
+///     SolverParams::new(1.0e-20, 64)?,
+/// )?;
+/// assert_eq!(reports.len(), shifts.len());
+/// assert!(reports.iter().all(|report| report.iterations == 0));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn multi_shift_cg<O: HermitianPositiveOperator>(
+    outputs: &mut [FermionField],
+    operator: &O,
+    rhs: &FermionField,
+    shifts: &[f64],
+    params: SolverParams,
+) -> Result<Vec<MultiShiftSolverReport>, DiracError> {
+    validate_multi_shift_inputs(outputs, operator, rhs, shifts)?;
+    let mut all_zero = true;
+    for output in outputs.iter() {
+        if output.norm_squared()? != 0.0 {
+            all_zero = false;
+            break;
+        }
+    }
+    let mut work = Vec::with_capacity(outputs.len());
+    for output in outputs.iter() {
+        work.push(output.try_clone()?);
+    }
+    let reports = if all_zero {
+        solve_zero_shifted(&mut work, operator, rhs, shifts, params)?
+    } else {
+        solve_nonzero_shifted(&mut work, operator, rhs, shifts, params)?
+    };
+    for (output, result) in outputs.iter_mut().zip(work.iter()) {
+        output.copy_from(result).map_err(map_numeric_error)?;
+    }
+    Ok(reports)
+}
+
 /// Applies the pinned `cg` recurrence to a Hermitian-positive operator.
 ///
 /// `output` is both the initial guess and the transactional destination. It is
@@ -513,6 +630,371 @@ pub fn bicgstab<O: FermionOperator>(
     }
 
     Err(SolverError::Exhaustion.into())
+}
+
+fn validate_multi_shift_inputs<O: HermitianPositiveOperator>(
+    outputs: &[FermionField],
+    operator: &O,
+    rhs: &FermionField,
+    shifts: &[f64],
+) -> Result<(), DiracError> {
+    if outputs.len() != shifts.len() {
+        return Err(SolverError::ShiftCountMismatch {
+            outputs: outputs.len(),
+            shifts: shifts.len(),
+        }
+        .into());
+    }
+    validate_operator_rhs(operator, rhs)?;
+    let expected_len = operator
+        .components()
+        .checked_mul(operator.lattice().nv())
+        .and_then(|value| value.checked_mul(3))
+        .ok_or(DiracError::AllocationOverflow)?;
+    for (index, (&shift, output)) in shifts.iter().zip(outputs).enumerate() {
+        if !shift.is_finite() || shift < 0.0 {
+            return Err(SolverError::InvalidShift { index }.into());
+        }
+        if output.lattice() != operator.lattice() {
+            return Err(DiracError::LatticeMismatch {
+                operand: "output",
+                expected: operator.lattice(),
+                found: output.lattice(),
+            });
+        }
+        if output.components() != operator.components() {
+            return Err(DiracError::ComponentsMismatch {
+                operand: "output",
+                expected: operator.components(),
+                found: output.components(),
+            });
+        }
+        if output.host_data()?.len() != expected_len {
+            return Err(DiracError::StorageInvariant);
+        }
+        output.ensure_finite().map_err(map_numeric_error)?;
+    }
+    Ok(())
+}
+
+fn validate_operator_rhs<O: FermionOperator>(
+    operator: &O,
+    rhs: &FermionField,
+) -> Result<(), DiracError> {
+    let components = operator.components();
+    if !matches!(components, 1 | 4) {
+        return Err(DiracError::InvalidComponents { found: components });
+    }
+    if rhs.lattice() != operator.lattice() {
+        return Err(DiracError::LatticeMismatch {
+            operand: "rhs",
+            expected: operator.lattice(),
+            found: rhs.lattice(),
+        });
+    }
+    if rhs.components() != components {
+        return Err(DiracError::ComponentsMismatch {
+            operand: "rhs",
+            expected: components,
+            found: rhs.components(),
+        });
+    }
+    let expected_len = components
+        .checked_mul(operator.lattice().nv())
+        .and_then(|value| value.checked_mul(3))
+        .ok_or(DiracError::AllocationOverflow)?;
+    if rhs.host_data()?.len() != expected_len {
+        return Err(DiracError::StorageInvariant);
+    }
+    rhs.ensure_finite().map_err(map_numeric_error)
+}
+
+fn solve_zero_shifted<O: HermitianPositiveOperator>(
+    work: &mut [FermionField],
+    operator: &O,
+    rhs: &FermionField,
+    shifts: &[f64],
+    params: SolverParams,
+) -> Result<Vec<MultiShiftSolverReport>, DiracError> {
+    let count = shifts.len();
+    let mut x = FermionField::zeros(operator.lattice(), operator.components())?;
+    let mut r = rhs.try_clone()?;
+    let mut p = rhs.try_clone()?;
+    let mut q = scratch_field(operator)?;
+    let mut operator_scratch = scratch_fields(operator, OPERATOR_SCRATCH_FIELDS)?;
+    let mut shifted_p = Vec::with_capacity(count);
+    for _ in 0..count {
+        shifted_p.push(rhs.try_clone()?);
+    }
+    let mut rho_m = vec![ONE; count];
+    let mut rho_0 = vec![ONE; count];
+    let mut rho_p = vec![ONE; count];
+    let mut converged = vec![false; count];
+    let mut initial_residuals = vec![0.0; count];
+    let mut recursive_residuals = vec![0.0; count];
+    let mut iterations = vec![0usize; count];
+    let mut branches = vec![ConvergenceBranch::InitialResidual; count];
+    let initial = checked_norm_squared(&r)?;
+    initial_residuals.fill(initial);
+    recursive_residuals.fill(initial);
+    let mut active = count;
+
+    if initial >= params.tolerance {
+        let mut c1 = checked_dot(&p, &p)?;
+        require_positive(c1)?;
+        let mut alpha_m = ONE;
+        let mut beta_m = Complex64::default();
+        for iteration in 1..=params.max_iterations {
+            // Julia `shiftedcg`: q = A*p; pAp = p⋅q; rr = r⋅r.
+            checked_apply(operator, &mut q, &p, &mut operator_scratch)?;
+            let p_ap = checked_dot(&p, &q)?;
+            let q_norm_squared = checked_norm_squared(&q)?;
+            require_positive(p_ap)?;
+            let rr = checked_dot(&r, &r)?;
+            let rr_squared = require_residual(rr)?;
+            let alpha_k = checked_division(rr, p_ap, product_scale(rr_squared, q_norm_squared)?)?;
+
+            // Julia `shiftedcg`: x += alpha*p; r -= alpha*q.
+            checked_add_scaled(&mut x, alpha_k, &p)?;
+            checked_add_scaled(&mut r, -alpha_k, &q)?;
+            let c3 = checked_dot(&r, &r)?;
+            require_residual(c3)?;
+            let beta_k = checked_division(c3, c1, c1.norm())?;
+            checked_add_scaled_self(&mut p, beta_k, &r)?;
+
+            for (index, shift) in shifts.iter().copied().enumerate() {
+                if converged[index] {
+                    continue;
+                }
+                let rho_kj = rho_0[index];
+                if rho_kj.norm() < params.tolerance {
+                    converged[index] = true;
+                    active = active.saturating_sub(1);
+                    recursive_residuals[index] = 0.0;
+                    iterations[index] = iteration;
+                    branches[index] = ConvergenceBranch::UpdatedResidual;
+                    continue;
+                }
+                let shift = Complex64::new(shift, 0.0);
+                let first_term = rho_m[index] * alpha_m * (ONE + alpha_k * shift);
+                let second_term = alpha_k * beta_m * (rho_m[index] - rho_kj);
+                let denominator = first_term + second_term;
+                let numerator = rho_kj * rho_m[index] * alpha_m;
+                let denominator_scale = first_term.norm() + second_term.norm();
+                let rho_next = checked_division(numerator, denominator, denominator_scale)?;
+                let ratio = checked_division(rho_next, rho_kj, rho_kj.norm())?;
+                let alpha_kj = ratio * alpha_k;
+                if !complex_is_finite(alpha_kj) {
+                    return Err(SolverError::NonFiniteIntermediate.into());
+                }
+                checked_add_scaled(&mut work[index], alpha_kj, &shifted_p[index])?;
+                let beta_kj = ratio * ratio * beta_k;
+                if !complex_is_finite(beta_kj) {
+                    return Err(SolverError::NonFiniteIntermediate.into());
+                }
+                shifted_p[index].scale_and_add_scaled(beta_kj, rho_next, &r)?;
+                // Julia `shiftedcg` estimates with the residual norm before
+                // the current base-CG update (`rr * abs(rho_p)^2`).
+                let estimate = rr_squared * rho_next.norm_sqr();
+                if !estimate.is_finite() {
+                    return Err(SolverError::NonFiniteIntermediate.into());
+                }
+                rho_p[index] = rho_next;
+                recursive_residuals[index] = estimate;
+                if estimate < params.tolerance {
+                    converged[index] = true;
+                    active = active.saturating_sub(1);
+                    iterations[index] = iteration;
+                    branches[index] = ConvergenceBranch::UpdatedResidual;
+                }
+            }
+
+            rho_m.copy_from_slice(&rho_0);
+            rho_0.copy_from_slice(&rho_p);
+            alpha_m = alpha_k;
+            beta_m = beta_k;
+            c1 = c3;
+            if active == 0 {
+                break;
+            }
+        }
+        if active != 0 {
+            return Err(SolverError::Exhaustion.into());
+        }
+    }
+
+    finish_multi_shift(
+        work,
+        operator,
+        rhs,
+        shifts,
+        params,
+        MultiShiftState {
+            initial_residuals: &initial_residuals,
+            recursive_residuals: &recursive_residuals,
+            iterations: &iterations,
+            branches: &branches,
+        },
+        &mut operator_scratch,
+    )
+}
+
+fn solve_nonzero_shifted<O: HermitianPositiveOperator>(
+    work: &mut [FermionField],
+    operator: &O,
+    rhs: &FermionField,
+    shifts: &[f64],
+    params: SolverParams,
+) -> Result<Vec<MultiShiftSolverReport>, DiracError> {
+    let count = shifts.len();
+    let mut residuals = Vec::with_capacity(count);
+    let mut directions = Vec::with_capacity(count);
+    for _ in 0..count {
+        residuals.push(FermionField::zeros(
+            operator.lattice(),
+            operator.components(),
+        )?);
+        directions.push(FermionField::zeros(
+            operator.lattice(),
+            operator.components(),
+        )?);
+    }
+    let mut applied = scratch_field(operator)?;
+    let mut operator_scratch = scratch_fields(operator, OPERATOR_SCRATCH_FIELDS)?;
+    let mut initial_residuals = vec![0.0; count];
+    let mut recursive_residuals = vec![0.0; count];
+    let mut iterations = vec![0usize; count];
+    let mut branches = vec![ConvergenceBranch::InitialResidual; count];
+
+    for index in 0..count {
+        checked_shifted_apply(
+            operator,
+            &mut applied,
+            &work[index],
+            shifts[index],
+            &mut operator_scratch,
+        )?;
+        checked_copy(&mut residuals[index], rhs)?;
+        checked_add_scaled(&mut residuals[index], -ONE, &applied)?;
+        let initial = checked_norm_squared(&residuals[index])?;
+        initial_residuals[index] = initial;
+        recursive_residuals[index] = initial;
+        if initial < params.tolerance {
+            continue;
+        }
+        checked_copy(&mut directions[index], &residuals[index])?;
+        let mut c1 = checked_dot(&directions[index], &residuals[index])?;
+        require_positive(c1)?;
+        let mut previous_residual_squared = initial;
+        let mut converged = false;
+        for iteration in 1..=params.max_iterations {
+            checked_shifted_apply(
+                operator,
+                &mut applied,
+                &directions[index],
+                shifts[index],
+                &mut operator_scratch,
+            )?;
+            let c2 = checked_dot(&directions[index], &applied)?;
+            let applied_norm_squared = checked_norm_squared(&applied)?;
+            require_positive(c2)?;
+            let alpha = checked_division(c1, c2, product_scale(c1.re, applied_norm_squared)?)?;
+            checked_add_scaled(&mut work[index], alpha, &directions[index])?;
+            checked_add_scaled(&mut residuals[index], -alpha, &applied)?;
+            let c3 = checked_dot(&residuals[index], &residuals[index])?;
+            let residual_squared = require_residual(c3)?;
+            recursive_residuals[index] = residual_squared;
+            if residual_squared < params.tolerance {
+                iterations[index] = iteration;
+                branches[index] = ConvergenceBranch::UpdatedResidual;
+                converged = true;
+                break;
+            }
+            if is_stagnant(previous_residual_squared, residual_squared) {
+                return Err(SolverError::Stagnation.into());
+            }
+            let beta = checked_division(c3, c1, c1.norm())?;
+            checked_add_scaled_self(&mut directions[index], beta, &residuals[index])?;
+            c1 = c3;
+            previous_residual_squared = residual_squared;
+        }
+        if !converged {
+            return Err(SolverError::Exhaustion.into());
+        }
+    }
+
+    finish_multi_shift(
+        work,
+        operator,
+        rhs,
+        shifts,
+        params,
+        MultiShiftState {
+            initial_residuals: &initial_residuals,
+            recursive_residuals: &recursive_residuals,
+            iterations: &iterations,
+            branches: &branches,
+        },
+        &mut operator_scratch,
+    )
+}
+
+struct MultiShiftState<'a> {
+    initial_residuals: &'a [f64],
+    recursive_residuals: &'a [f64],
+    iterations: &'a [usize],
+    branches: &'a [ConvergenceBranch],
+}
+
+fn finish_multi_shift<O: HermitianPositiveOperator>(
+    work: &[FermionField],
+    operator: &O,
+    rhs: &FermionField,
+    shifts: &[f64],
+    params: SolverParams,
+    state: MultiShiftState<'_>,
+    operator_scratch: &mut [FermionField],
+) -> Result<Vec<MultiShiftSolverReport>, DiracError> {
+    let mut applied = scratch_field(operator)?;
+    let mut residual = scratch_field(operator)?;
+    let mut reports = Vec::with_capacity(shifts.len());
+    for index in 0..shifts.len() {
+        checked_shifted_apply(
+            operator,
+            &mut applied,
+            &work[index],
+            shifts[index],
+            operator_scratch,
+        )?;
+        checked_copy(&mut residual, rhs)?;
+        checked_add_scaled(&mut residual, -ONE, &applied)?;
+        let true_residual_squared = checked_norm_squared(&residual)?;
+        if true_residual_squared >= params.tolerance {
+            return Err(SolverError::TrueResidualMismatch.into());
+        }
+        reports.push(MultiShiftSolverReport {
+            shift: shifts[index],
+            iterations: state.iterations[index],
+            recursive_residual_squared: state.recursive_residuals[index],
+            initial_residual_squared: state.initial_residuals[index],
+            true_residual_squared,
+            tolerance: params.tolerance,
+            maximum_iterations: params.max_iterations,
+            convergence_branch: state.branches[index],
+        });
+    }
+    Ok(reports)
+}
+
+fn checked_shifted_apply<O: HermitianPositiveOperator>(
+    operator: &O,
+    output: &mut FermionField,
+    input: &FermionField,
+    shift: f64,
+    operator_scratch: &mut [FermionField],
+) -> Result<(), DiracError> {
+    checked_apply(operator, output, input, operator_scratch)?;
+    checked_add_scaled(output, Complex64::new(shift, 0.0), input)
 }
 
 fn validate_solver_inputs<O: FermionOperator>(

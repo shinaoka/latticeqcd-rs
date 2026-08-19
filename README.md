@@ -353,6 +353,57 @@ finite-difference series at epsilons `1e-3`, `5e-4`, and `2.5e-4` was
 all `512/512` coefficients passed at `5e-4`, with ratios `3.964024943514664`
 and `3.645642262945268`.
 
+## One-link staggered fermions and multi-shift CG (Phase 3 Task D)
+
+Task D is implementation-complete; independent post-review remains pending.
+`StaggeredDirac` maps the pinned LatticeDiracOperators.jl v0.6.4
+`Staggered_Dirac_operator`/`Dx!` path, `StaggeredAdjoint` maps its adjoint,
+`StaggeredNormalOperator` composes `D†D`, and
+`StaggeredClosedNormalOperator` independently lowers `mass² I - K²`.
+`multi_shift_cg` maps `Dirac_operators.shiftedcg`, retaining the shared
+`r`, `p`, `q`, `alpha`, `beta`, `rho_m`, `rho_0`, and `rho_p` recurrence order
+with transactional outputs and fresh true-residual checks. Eta is
+`[1,(-1)^x,(-1)^(x+y),(-1)^(x+y+z)]` in zero-based coordinates; the validated
+fermion boundary sign is applied once per wrapped hop.
+
+The fixture uses `[2,2,2,2]`, one component, mass `0.17`, shifts
+`[0.31, 0.0, 0.07]`, absolute squared solver tolerance `1e-24`, and maximum
+iterations `2000`. The operator, anti-Hermiticity, and normal-composition
+comparison tolerance is `2e-12`; the independently recomputed shifted true
+relative-residual tolerance is `1e-11`. These are distinct gates: the former
+compares operator components/identities, while the latter checks each solved
+`(D†D + shift I)x = b` after a fresh application.
+
+Regenerate twice from the clean pinned Julia project:
+
+```bash
+export LATTICEQCD_JULIA_PROJECT=/tmp/latticeqcd-phase3-julia-env
+export GAUGEFIELDS_JL_DIR=/path/to/Gaugefields.jl
+export LATTICEDIRACOPERATORS_JL_DIR=/path/to/LatticeDiracOperators.jl
+export WILSONLOOP_JL_DIR=/path/to/Wilsonloop.jl
+export JULIA_NUM_THREADS=1
+julia --startup-file=no --project="$LATTICEQCD_JULIA_PROJECT" \
+  fixtures/generate.jl fermions_task_d
+```
+
+Finalization evidence: both 38-file trees (37 declared payloads plus metadata)
+have complete-tree hash
+`c372e6e56bc05ebc611c6cc3dba5c247eafbc12ca58a0eee2ac3737cdbb08d4b`. The
+Julia reports have initial residual squared `2.99675440000000037e1`; all three
+shifts converged in 8 iterations on the updated-residual branch. In shift order
+`0.31`, `0.0`, `0.07`, the Julia recursive/true residual-squared pairs are
+`(1.77459964884789642e-27, 1.47868086305190983e-30)`,
+`(1.19636782643941803e-25, 7.62807887898313613e-30)`, and
+`(4.17668148129519829e-26, 4.43903981763168336e-30)`; Rust true relative
+residuals are respectively `2.52706753667624838e-16`,
+`5.23618850174067806e-16`, and `3.73441567789983714e-16`.
+
+The fixture test consumes all 37 declared payloads and every metadata/report
+field. D, D†, and K payload parity is bit-exact; normal-composition parity is
+`3.19867204157556452e-17` (periodic) and `1.66533453693773481e-16`
+(default anti-periodic), K anti-Hermiticity is
+`2.48253415324727312e-16`, and eta/boundary impulse checks are exact.
+
 ## Quenched SU(3) HMC
 
 HMC is a fixed-step, CPU-first SU(3) API. The caller owns the evolution context

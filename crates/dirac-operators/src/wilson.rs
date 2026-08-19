@@ -621,7 +621,7 @@ pub(crate) fn validate_kappa(kappa: f64) -> Result<(), DiracError> {
     Ok(())
 }
 
-fn validate_host_links(host: &HostGaugeLinks<'_>) -> Result<(), DiracError> {
+pub(crate) fn validate_host_links(host: &HostGaugeLinks<'_>) -> Result<(), DiracError> {
     for site in 0..host.lattice().nv() {
         for direction in 0..4 {
             let matrix = host.link(direction, site)?;

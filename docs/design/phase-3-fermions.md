@@ -1,6 +1,6 @@
 # Phase 3 fermions
 
-Status: approved; Tasks A-C complete, Task D pending
+Status: approved; Tasks A-D complete, Task E pending
 
 ## Goal
 
@@ -373,9 +373,38 @@ section of this document has a `Correct-to-merge` pre-review verdict.
 3. **Task C: Wilson pseudofermions and HMC**
    - refresh, action, analytic force, combined leapfrog and Metropolis;
    - Julia action/force/one-trajectory comparison and finite differences.
-4. **Task D: staggered operator and multi-shift CG**
-   - staggered phases, `D`, `D†`, normal composition, shifted solver;
-   - Julia impulse/full-field and shifted true-residual fixtures.
+4. **Task D: staggered operator and multi-shift CG** *(implementation complete; post-review pending)*
+   - `Staggered_Dirac_operator`/`Dx!` → `StaggeredDirac`, adjoint →
+     `StaggeredAdjoint`, `DdagD_Staggered_operator` →
+     `StaggeredNormalOperator`, closed `mass² I-K²` →
+     `StaggeredClosedNormalOperator`, and `shiftedcg` → `multi_shift_cg`;
+   - zero-based eta phases and one-time wrapped-hop boundary signs;
+   - Julia impulse/full-field and shifted true-residual fixtures, with every
+     declared payload and metadata/report field consumed by the integration test.
+
+   Finalization evidence: the fixture has 37 declared payloads and 38 total
+   tree files. Two generations from Julia 1.12.5 and the clean pinned
+   Gaugefields.jl `9e5719970770f4497405a856315c90bef7f74449`,
+   LatticeDiracOperators.jl `bdef628184597815ba3e0cddf2536df767e78a02`, and
+   Wilsonloop.jl `e1a617fdedb19b785f89bdeb13c30e53b20743a7` checkouts matched at
+   complete-tree hash
+   `c372e6e56bc05ebc611c6cc3dba5c247eafbc12ca58a0eee2ac3737cdbb08d4b`.
+   The fixture uses mass `0.17`, shifts `[0.31, 0.0, 0.07]`, absolute squared
+   solver tolerance `1e-24`, and 2000 iterations. Operator, anti-Hermiticity,
+   and normal-composition comparisons use `2e-12`; fresh shifted true relative
+   residuals use `1e-11`. The former compares components and identities; the
+   latter is the independent solve gate and is intentionally distinct.
+   D/Ddag/K payload parity is bit-exact; normal-composition maxima are
+   `3.19867204157556452e-17` (periodic) and
+   `1.66533453693773481e-16` (default anti-periodic), K anti-Hermiticity is
+   `2.48253415324727312e-16`, and eta/impulse payloads are exact. The initial
+   shifted residual squared is `2.99675440000000037e1`; all reports took 8
+   updated-residual iterations. Julia recursive/true residual-squared pairs in
+   shift order are `(1.77459964884789642e-27, 1.47868086305190983e-30)`,
+   `(1.19636782643941803e-25, 7.62807887898313613e-30)`, and
+   `(4.17668148129519829e-26, 4.43903981763168336e-30)`. Rust fresh true
+   relative residuals are `2.52706753667624838e-16`,
+   `5.23618850174067806e-16`, and `3.73441567789983714e-16`.
 5. **Task E: two-flavor RHMC and integration**
    - pinned coefficients, refresh/action/force/HMC;
    - rational scalar errors, Julia fixed trajectory, reversibility, and short

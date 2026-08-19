@@ -412,6 +412,35 @@ impl FermionField {
         Ok(())
     }
 
+    pub(crate) fn scale_and_add_scaled(
+        &mut self,
+        self_factor: Complex64,
+        source_factor: Complex64,
+        source: &Self,
+    ) -> Result<(), DiracError> {
+        self.ensure_compatible(source, "scale_and_add_scaled")?;
+        if !self_factor.re.is_finite()
+            || !self_factor.im.is_finite()
+            || !source_factor.re.is_finite()
+            || !source_factor.im.is_finite()
+        {
+            return Err(DiracError::NumericalRange);
+        }
+        let left = self.host_data()?;
+        let right = source.host_data()?;
+        for (left_value, right_value) in left.iter().zip(right) {
+            let value = self_factor * *left_value + source_factor * *right_value;
+            if !value.re.is_finite() || !value.im.is_finite() {
+                return Err(DiracError::NumericalRange);
+            }
+        }
+        let destination = self.host_data_mut()?;
+        for (destination_value, right_value) in destination.iter_mut().zip(right) {
+            *destination_value = self_factor * *destination_value + source_factor * *right_value;
+        }
+        Ok(())
+    }
+
     pub(crate) fn host_data_mut(&mut self) -> Result<&mut [Complex64], DiracError> {
         let found = format!("{:?}", self.tensor.placement());
         self.tensor

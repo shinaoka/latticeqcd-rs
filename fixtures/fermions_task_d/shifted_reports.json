@@ -1,0 +1,8 @@
+{
+  "initial_residual_squared": 29.967544000000004,
+  "reports": [
+    {"shift": 0.31, "iterations": 8, "recursive_residual_squared": 1.7745996488478964e-27, "true_residual_squared": 1.47868086305191e-30, "absolute_squared_tolerance": 1.0e-24, "maximum_iterations": 2000, "convergence_branch": "updated_residual"},
+    {"shift": 0.0, "iterations": 8, "recursive_residual_squared": 1.196367826439418e-25, "true_residual_squared": 7.628078878983135e-30, "absolute_squared_tolerance": 1.0e-24, "maximum_iterations": 2000, "convergence_branch": "updated_residual"},
+    {"shift": 0.07, "iterations": 8, "recursive_residual_squared": 4.1766814812951983e-26, "true_residual_squared": 4.439039817631683e-30, "absolute_squared_tolerance": 1.0e-24, "maximum_iterations": 2000, "convergence_branch": "updated_residual"}
+  ]
+}

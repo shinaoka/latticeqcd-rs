@@ -26,9 +26,13 @@ pub enum SolverError {
     Exhaustion,
     #[error("recursive convergence did not pass a fresh true-residual check")]
     TrueResidualMismatch,
+    #[error("multi-shift output count {outputs} does not match shift count {shifts}")]
+    ShiftCountMismatch { outputs: usize, shifts: usize },
+    #[error("multi-shift shift at index {index} must be finite and non-negative")]
+    InvalidShift { index: usize },
 }
 
-/// Failures returned by validated fermion fields and Wilson operators.
+/// Failures returned by validated fermion fields and Wilson/staggered operators.
 #[derive(Debug, thiserror::Error)]
 pub enum DiracError {
     #[error("fermion tensor must have rank {expected}, found {found}")]
@@ -76,6 +80,10 @@ pub enum DiracError {
     NonFiniteKappa { found: f64 },
     #[error("kappa must be positive, found {found}")]
     NonPositiveKappa { found: f64 },
+    #[error("staggered mass must be finite, found {found}")]
+    NonFiniteMass { found: f64 },
+    #[error("staggered mass must be positive, found {found}")]
+    NonPositiveMass { found: f64 },
     #[error("Wilson r must be finite, found {found}")]
     NonFiniteWilsonR { found: f64 },
     #[error("only Wilson r=1 is supported, found {found}")]
