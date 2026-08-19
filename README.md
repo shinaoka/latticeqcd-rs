@@ -20,7 +20,11 @@ The `dirac-operators` crate follows Wilson/staggered fermion, solver,
 pseudofermion-force, and RHMC conventions from
 [LatticeDiracOperators.jl](https://github.com/akio-tomiya/LatticeDiracOperators.jl),
 also MIT-licensed; its notice is preserved in
-[`crates/dirac-operators/LICENSE`](crates/dirac-operators/LICENSE).
+[`crates/dirac-operators/LICENSE`](crates/dirac-operators/LICENSE). The
+`latticeqcd` crate follows the parameter/control naming and workflow conventions
+of [LatticeQCD.jl](https://github.com/akio-tomiya/LatticeQCD.jl) v1.3.7 at
+`c09de20aae10f28f6a9c7e84e7711fce94d50915`; its MIT notice is preserved in
+[`crates/latticeqcd/LICENSE`](crates/latticeqcd/LICENSE).
 
 ## Signed Wilson paths and loop actions
 

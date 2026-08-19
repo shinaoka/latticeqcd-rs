@@ -10,6 +10,29 @@ use measurements::fermions::{
 };
 use rand::RngCore;
 
+struct IdentityOperator {
+    lattice: LatticeShape4,
+}
+
+impl FermionOperator for IdentityOperator {
+    fn lattice(&self) -> LatticeShape4 {
+        self.lattice
+    }
+
+    fn components(&self) -> usize {
+        1
+    }
+
+    fn apply_into(
+        &self,
+        output: &mut FermionField,
+        input: &FermionField,
+    ) -> Result<(), DiracError> {
+        *output = input.try_clone()?;
+        Ok(())
+    }
+}
+
 struct FailingOperator {
     lattice: LatticeShape4,
 }
@@ -30,6 +53,18 @@ impl FermionOperator for FailingOperator {
     ) -> Result<(), DiracError> {
         Err(SolverError::Exhaustion.into())
     }
+}
+
+#[test]
+fn synthetic_identity_pion_contraction_has_known_timeslices(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let operator = IdentityOperator {
+        lattice: LatticeShape4::new([2, 1, 1, 2])?,
+    };
+    let pion = pion_correlator(&operator, SolverParams::new(1.0e-24, 4)?)?;
+    assert_eq!(pion.values, vec![3.0, 0.0]);
+    assert_eq!(pion.solver_reports.len(), 3);
+    Ok(())
 }
 
 #[test]

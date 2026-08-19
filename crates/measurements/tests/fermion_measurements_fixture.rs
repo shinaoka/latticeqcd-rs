@@ -800,10 +800,6 @@ fn consume_metadata(metadata: &Value, dir: &Path) -> Result<Vec<Vec<u64>>, Box<d
         Some(1.0e-11)
     );
     assert_eq!(
-        comparison["cold_identity_tolerance"].as_f64(),
-        Some(2.0e-14)
-    );
-    assert_eq!(
         comparison["criterion"].as_str(),
         Some("solutions and corrected measurements compare; solver iteration counts are provenance only")
     );

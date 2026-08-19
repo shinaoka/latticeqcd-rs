@@ -1,6 +1,6 @@
 # Phase 4 fermion measurements and frontend
 
-Status: pre-implementation design
+Status: implemented
 
 ## Scope
 

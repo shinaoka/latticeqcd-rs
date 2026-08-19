@@ -1,5 +1,11 @@
 //! Strict TOML-driven execution for the host lattice-QCD primitives.
 //!
+//! Parameter/control naming and workflow structure follow the MIT-licensed
+//! LatticeQCD.jl v1.3.7 at revision
+//! `c09de20aae10f28f6a9c7e84e7711fce94d50915`; Rust uses strict tagged
+//! validation and the explicit scheduler documented by this crate rather than
+//! copying the pinned frontend's permissive parser behavior.
+//!
 //! The checked frontend path is:
 //!
 //! ```text

@@ -40,7 +40,7 @@ No upstream submission is authorized or performed.
 | A: fermion measurements | round 1 `Correct-to-merge` | full diff `Correct-to-merge` | two delta rounds `Correct-to-merge` |
 | B: `latticeqcd` frontend | round 2 `Correct-to-merge` | full diff `Correct-to-merge` | delta `Correct-to-merge` |
 | C: integrated evidence/docs | round 2 `Correct-to-merge` | round 1 `Not correct-to-merge`; fixed | two delta rounds, final `Correct-to-merge` |
-| Integrated diff | n/a | pending | pending |
+| Integrated diff | n/a | full diff `Correct-to-merge` | delta `Correct-to-merge` |
 
 Round 1 reviewer findings were incorporated before implementation: exact sea
 fermion-to-HMC dispatch, raw-word Z4 mapping, explicit fixture code placement,
@@ -56,7 +56,7 @@ Reviewer: `reviewer-flash` (read-only, different model family from the planned
 
 - deterministic fixture generated twice from clean pinned checkouts with Julia
   1.12.5; both complete trees SHA256:
-  `55ee3a86d2b8d6ef4497c05a5539e5daa53ace71b147382e4e951ef21d570f18`;
+  `af8a045ccfcdf92382806b078edd758d056fad019604c48cf0156811466d7c2d`;
 - 89 declared payloads exactly matched the 89 non-metadata files;
 - maximum Wilson solution error: `5.551792708129603e-17`;
 - maximum staggered point-source solution error: `3.351599329828878e-13`;
@@ -177,3 +177,41 @@ Minor statistical/metadata clarity issues. All were fixed; after metadata
 regeneration, a remaining formatting anomaly was fixed and regenerated again.
 Both delta rounds completed, with the final verdict `Correct-to-merge`.
 Integrated review remains pending; no push was made.
+
+## Fresh integrated local gate
+
+A fresh target rebuild removed `26.2 GiB` of prior Cargo artifacts, then passed:
+
+```text
+cargo fmt --all -- --check                         PASS
+cargo check --workspace                            PASS
+cargo test --workspace                             PASS (293 passed, 1 ignored)
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+                                                     PASS
+cargo test --workspace --all-features              PASS (303 passed, 1 ignored)
+cargo test --doc --workspace --all-features        PASS (71 passed)
+cargo doc --workspace --all-features --no-deps     PASS
+cargo build --workspace --examples --all-features  PASS
+```
+
+All six Rust examples plus the `latticeqcd` binary configuration ran
+successfully. Their checked outputs included ILDG cold round-trip, three
+heatbath sweeps, quenched HMC `3/3`, traced/direct Wilson action residual `0`,
+cold gluonic measurements, Wilson/staggered/RHMC smoke, and frontend
+`completed_updates=1 accepted=1 rejected=0 measurements=2 flows=0 outputs=0`.
+
+Integrated self-audits passed: `git diff --check`; five exact tenferro manifest
+pins and nine lockfile sources at
+`c942129974b544225ed963414d7be1300980f901`; current stale-symbol scan; no new
+unsafe/TODO/fallback code; both fixture declaration sets; clean pinned Julia
+checkouts; and exact MIT notices for all five crates. The preflight found and
+fixed the initially missing `latticeqcd` copy of LatticeQCD.jl's MIT notice and
+added pinned attribution to README/rustdoc before integrated review.
+
+The integrated full-diff review returned `Correct-to-merge` with four Minor
+findings. The design status, synthetic identity contraction coverage,
+dependency policy, and independent acceptance reporting were fixed; Task A was
+regenerated twice at its current hash. Integrated delta review returned
+`Correct-to-merge` with no findings. The exact post-delta tree was then rebuilt
+from another empty target (`24.5 GiB` removed) and produced the counts above;
+all seven runnable examples/frontends passed again.
