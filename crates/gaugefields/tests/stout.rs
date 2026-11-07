@@ -63,7 +63,7 @@ fn su3_residual(links: &GaugeLinks) -> (f64, f64) {
     let mut unitary = 0.0_f64;
     let mut determinant = 0.0_f64;
     for link in links.links() {
-        for block in link.typed().host_data().unwrap().chunks_exact(9) {
+        for block in link.typed().host_data().unwrap().as_chunks::<9>().0 {
             let matrix = Mat3::load(block, 0).unwrap();
             let product = matrix.mul_adj_right(matrix);
             for row in 0..3 {
@@ -95,7 +95,7 @@ fn cold_field_is_exact_for_positive_zero_and_negative_rho() -> Result<(), GaugeE
     for rho in [0.12, 0.0, -0.07] {
         let output = stout_step(&mut context, &links, rho)?;
         for link in output.links() {
-            for block in link.typed().host_data().unwrap().chunks_exact(9) {
+            for block in link.typed().host_data().unwrap().as_chunks::<9>().0 {
                 assert_eq!(block[0], Complex64::new(1.0, 0.0));
                 assert_eq!(block[4], Complex64::new(1.0, 0.0));
                 assert_eq!(block[8], Complex64::new(1.0, 0.0));

@@ -16,7 +16,7 @@ fn cold_force_quantities_have_expected_shapes_and_values() {
     let u = cold_su3(l).unwrap();
     let d = dsdu(&u, 6.0).unwrap();
     for link in &d {
-        for block in link.typed().host_data().unwrap().chunks_exact(9) {
+        for block in link.typed().host_data().unwrap().as_chunks::<9>().0 {
             for j in 0..3 {
                 for i in 0..3 {
                     assert!(

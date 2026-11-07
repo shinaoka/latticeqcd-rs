@@ -45,7 +45,7 @@ fn su3_residual(links: &GaugeLinks) -> (f64, f64) {
     let mut unitary = 0.0_f64;
     let mut determinant = 0.0_f64;
     for link in links.links() {
-        for block in link.typed().host_data().unwrap().chunks_exact(9) {
+        for block in link.typed().host_data().unwrap().as_chunks::<9>().0 {
             let matrix = Mat3::load(block, 0).unwrap();
             let product = matrix.adjoint().mul(matrix);
             for row in 0..3 {

@@ -184,7 +184,7 @@ impl<'a> StaggeredDirac<'a> {
     ) -> Result<(), DiracError> {
         self.apply_hopping_to_data(output, input)?;
         let sign = if adjoint { -1.0 } else { 1.0 };
-        for (site, output_site) in output.chunks_exact_mut(NC).enumerate() {
+        for (site, output_site) in output.as_chunks_mut::<NC>().0.iter_mut().enumerate() {
             let offset = site.checked_mul(NC).ok_or(DiracError::AllocationOverflow)?;
             let end = offset
                 .checked_add(NC)
