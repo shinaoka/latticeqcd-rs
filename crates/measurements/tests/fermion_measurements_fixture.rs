@@ -105,7 +105,7 @@ fn read_npy_complex(path: &Path) -> Result<(Vec<C>, Vec<usize>), Box<dyn Error>>
         return Err(format!("{} is not complex data", path.display()).into());
     }
     let mut values = Vec::with_capacity(payload.len() / 16);
-    for chunk in payload.chunks_exact(16) {
+    for chunk in payload.as_chunks::<16>().0 {
         values.push(C::new(
             f64::from_le_bytes(chunk[0..8].try_into()?),
             f64::from_le_bytes(chunk[8..16].try_into()?),
@@ -120,8 +120,8 @@ fn read_npy_f64(path: &Path) -> Result<(Vec<f64>, Vec<usize>), Box<dyn Error>> {
         return Err(format!("{} is not f64 data", path.display()).into());
     }
     let mut values = Vec::with_capacity(payload.len() / 8);
-    for chunk in payload.chunks_exact(8) {
-        values.push(f64::from_le_bytes(chunk.try_into()?));
+    for chunk in payload.as_chunks::<8>().0 {
+        values.push(f64::from_le_bytes(*chunk));
     }
     Ok((values, shape))
 }

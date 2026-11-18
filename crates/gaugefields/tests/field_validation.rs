@@ -72,7 +72,7 @@ fn cold_su3_is_identity_at_every_site_and_periodic() {
     let links = cold_su3(lattice).unwrap();
     assert_eq!(links.boundary(), Boundary::Periodic);
     for link in links.links() {
-        for block in link.typed().host_data().unwrap().chunks_exact(9) {
+        for block in link.typed().host_data().unwrap().as_chunks::<9>().0 {
             for b in 0..3 {
                 for a in 0..3 {
                     assert_eq!(block[a + 3 * b], Complex64::new((a == b) as u8 as f64, 0.0));

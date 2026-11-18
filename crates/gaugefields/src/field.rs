@@ -439,7 +439,7 @@ pub fn cold_su3(lattice: LatticeShape4) -> Result<GaugeLinks, GaugeError> {
         return Err(GaugeError::AllocationOverflow);
     }
     let mut values = vec![Complex64::default(); value_count];
-    for block in values.chunks_exact_mut(9) {
+    for block in values.as_chunks_mut::<9>().0 {
         for i in 0..3 {
             block[i + 3 * i] = Complex64::new(1.0, 0.0);
         }

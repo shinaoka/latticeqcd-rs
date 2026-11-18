@@ -314,8 +314,18 @@ fn task_e_ensemble_matches_the_independent_canonical_rust_estimator() -> TestRes
         }
     }
 
-    let rust_plaquette_blocks = plaquettes.chunks_exact(4).map(mean).collect::<Vec<_>>();
-    let rust_chiral_blocks = chirals.chunks_exact(4).map(mean).collect::<Vec<_>>();
+    let rust_plaquette_blocks = plaquettes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|block| mean(block.as_slice()))
+        .collect::<Vec<_>>();
+    let rust_chiral_blocks = chirals
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|block| mean(block.as_slice()))
+        .collect::<Vec<_>>();
     let rust_plaquette_mean = mean(&rust_plaquette_blocks);
     let rust_chiral_mean = mean(&rust_chiral_blocks);
     let rust_plaquette_se = standard_error(&rust_plaquette_blocks);

@@ -157,11 +157,11 @@ impl ReproducibleRng {
     /// assert_eq!(rng.next_u64(), after_fill.next_u64());
     /// ```
     pub fn fill_standard_normals(&mut self, output: &mut [f64]) {
-        let mut pairs = output.chunks_exact_mut(2);
-        for chunk in &mut pairs {
-            chunk.copy_from_slice(&self.standard_normal_pair());
+        let (pairs, remainder) = output.as_chunks_mut::<2>();
+        for chunk in pairs {
+            *chunk = self.standard_normal_pair();
         }
-        if let Some(last) = pairs.into_remainder().first_mut() {
+        if let Some(last) = remainder.first_mut() {
             *last = self.standard_normal_pair()[0];
         }
     }

@@ -92,7 +92,8 @@ fn su3_residual(links: &GaugeLinks) -> (f64, f64) {
             .typed()
             .host_data()
             .expect("host links")
-            .chunks_exact(9)
+            .as_chunks::<9>()
+            .0
         {
             let matrix = Mat3::load(block, 0).expect("matrix block");
             let product = matrix.mul_adj_right(matrix);

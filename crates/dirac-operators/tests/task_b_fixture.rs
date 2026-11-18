@@ -64,7 +64,7 @@ fn read_npy_complex(path: &Path) -> Result<(Vec<C>, Vec<usize>), Box<dyn Error>>
         return Err("NPY payload length mismatch".into());
     }
     let mut values = Vec::with_capacity(count);
-    for chunk in payload.chunks_exact(16) {
+    for chunk in payload.as_chunks::<16>().0 {
         values.push(C::new(
             f64::from_le_bytes(chunk[0..8].try_into()?),
             f64::from_le_bytes(chunk[8..16].try_into()?),
